@@ -1,0 +1,45 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+woossh
+mockwoo
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+coverage.html
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+.ssh_host_ed25519_key
+.ssh_host_ed25519_key.pub
+allowlist_authorized_keys
+
+# Docker
+.env.docker
+
+# Build output
+bin/
+dist/
+
+
+

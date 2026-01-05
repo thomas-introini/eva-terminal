@@ -1,0 +1,107 @@
+// Package woo provides a client for the WooCommerce REST API.
+package woo
+
+// Product represents a WooCommerce product (simple or variable).
+type Product struct {
+	ID             int         `json:"id"`
+	Name           string      `json:"name"`
+	Type           string      `json:"type"` // "simple" or "variable"
+	Status         string      `json:"status"`
+	Description    string      `json:"description"`
+	ShortDescription string    `json:"short_description"`
+	Price          string      `json:"price"`
+	RegularPrice   string      `json:"regular_price"`
+	SalePrice      string      `json:"sale_price"`
+	StockStatus    string      `json:"stock_status"` // "instock", "outofstock", "onbackorder"
+	StockQuantity  *int        `json:"stock_quantity"`
+	Attributes     []Attribute `json:"attributes"`
+	Variations     []int       `json:"variations"` // IDs of variations for variable products
+}
+
+// Variation represents a product variation (e.g., 250g or 1kg version).
+type Variation struct {
+	ID            int                 `json:"id"`
+	Price         string              `json:"price"`
+	RegularPrice  string              `json:"regular_price"`
+	SalePrice     string              `json:"sale_price"`
+	StockStatus   string              `json:"stock_status"`
+	StockQuantity *int                `json:"stock_quantity"`
+	Attributes    []VariationAttribute `json:"attributes"`
+}
+
+// Attribute represents a product attribute (e.g., "Grind Size" or "Weight").
+type Attribute struct {
+	ID        int      `json:"id"`
+	Name      string   `json:"name"`
+	Position  int      `json:"position"`
+	Visible   bool     `json:"visible"`
+	Variation bool     `json:"variation"` // True if used for variations
+	Options   []string `json:"options"`
+}
+
+// VariationAttribute represents an attribute value for a specific variation.
+type VariationAttribute struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Option string `json:"option"` // The selected value
+}
+
+// IsInStock returns true if the product is in stock.
+func (p *Product) IsInStock() bool {
+	return p.StockStatus == "instock"
+}
+
+// IsVariable returns true if the product is a variable product.
+func (p *Product) IsVariable() bool {
+	return p.Type == "variable"
+}
+
+// GetDisplayPrice returns the price to display (sale price if available).
+func (p *Product) GetDisplayPrice() string {
+	if p.SalePrice != "" {
+		return p.SalePrice
+	}
+	if p.Price != "" {
+		return p.Price
+	}
+	return p.RegularPrice
+}
+
+// GetAttribute returns the attribute with the given name, or nil if not found.
+func (p *Product) GetAttribute(name string) *Attribute {
+	for i := range p.Attributes {
+		if p.Attributes[i].Name == name {
+			return &p.Attributes[i]
+		}
+	}
+	return nil
+}
+
+// IsInStock returns true if the variation is in stock.
+func (v *Variation) IsInStock() bool {
+	return v.StockStatus == "instock"
+}
+
+// GetDisplayPrice returns the price to display for a variation.
+func (v *Variation) GetDisplayPrice() string {
+	if v.SalePrice != "" {
+		return v.SalePrice
+	}
+	if v.Price != "" {
+		return v.Price
+	}
+	return v.RegularPrice
+}
+
+// GetAttributeValue returns the value for an attribute by name.
+func (v *Variation) GetAttributeValue(name string) string {
+	for _, attr := range v.Attributes {
+		if attr.Name == name {
+			return attr.Option
+		}
+	}
+	return ""
+}
+
+
+

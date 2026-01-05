@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: woo-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - woo-network
+
+  wordpress:
+    image: wordpress:latest
+    container_name: woo-wordpress
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: 1
+    volumes:
+      - wp_data:/var/www/html
+      - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - woo-network
+
+  wpcli:
+    image: wordpress:cli
+    container_name: woo-cli
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+      - ./docker/setup.sh:/setup.sh:ro
+      - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
+    entrypoint: ["/bin/sh", "/setup.sh"]
+    networks:
+      - woo-network
+
+volumes:
+  db_data:
+  wp_data:
+
+networks:
+  woo-network:
+    driver: bridge

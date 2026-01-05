@@ -1,0 +1,141 @@
+[
+  {
+    "id": 1,
+    "name": "Ethiopian Yirgacheffe",
+    "type": "simple",
+    "status": "publish",
+    "description": "<p>A bright and fruity coffee from the <strong>Yirgacheffe</strong> region of Ethiopia. Notes of blueberry, lemon, and floral undertones.</p><p>Perfect for pour-over and filter brewing methods.</p>",
+    "short_description": "<p>Bright and fruity Ethiopian coffee with blueberry notes.</p>",
+    "price": "18.99",
+    "regular_price": "18.99",
+    "sale_price": "",
+    "stock_status": "instock",
+    "stock_quantity": 50,
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grind Size",
+        "position": 0,
+        "visible": true,
+        "variation": false,
+        "options": ["Whole Beans", "Espresso", "Moka Pot", "Filter", "French Press", "Turkish"]
+      }
+    ],
+    "variations": []
+  },
+  {
+    "id": 2,
+    "name": "Colombian Supremo",
+    "type": "simple",
+    "status": "publish",
+    "description": "<p>A classic <em>Colombian</em> coffee with a well-balanced profile. Rich chocolate and nutty flavors with a smooth finish.</p>",
+    "short_description": "<p>Classic Colombian with chocolate and nutty notes.</p>",
+    "price": "15.99",
+    "regular_price": "17.99",
+    "sale_price": "15.99",
+    "stock_status": "instock",
+    "stock_quantity": 100,
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grind Size",
+        "position": 0,
+        "visible": true,
+        "variation": false,
+        "options": ["Whole Beans", "Espresso", "Moka Pot", "Filter", "French Press"]
+      }
+    ],
+    "variations": []
+  },
+  {
+    "id": 101,
+    "name": "House Blend Signature",
+    "type": "variable",
+    "status": "publish",
+    "description": "<p>Our signature <strong>House Blend</strong> combines beans from Brazil, Colombia, and Guatemala.</p><ul><li>Medium roast</li><li>Notes of caramel and cocoa</li><li>Low acidity</li></ul>",
+    "short_description": "<p>Signature blend with caramel and cocoa notes.</p>",
+    "price": "14.99",
+    "regular_price": "14.99",
+    "sale_price": "",
+    "stock_status": "instock",
+    "stock_quantity": null,
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["250g", "1kg"]
+      },
+      {
+        "id": 1,
+        "name": "Grind Size",
+        "position": 1,
+        "visible": true,
+        "variation": false,
+        "options": ["Whole Beans", "Espresso", "Moka Pot", "Filter", "French Press", "Turkish"]
+      }
+    ],
+    "variations": [1011, 1012]
+  },
+  {
+    "id": 102,
+    "name": "Single Origin Sumatra",
+    "type": "variable",
+    "status": "publish",
+    "description": "<p>A bold and earthy coffee from <strong>Sumatra, Indonesia</strong>.</p><p>Tasting notes include dark chocolate, tobacco, and a hint of spice. Full body with low acidity.</p><p>Wet-hulled processing gives this coffee its distinctive character.</p>",
+    "short_description": "<p>Bold Sumatran coffee with earthy, chocolatey notes.</p>",
+    "price": "19.99",
+    "regular_price": "19.99",
+    "sale_price": "",
+    "stock_status": "instock",
+    "stock_quantity": null,
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "position": 0,
+        "visible": true,
+        "variation": true,
+        "options": ["250g", "1kg"]
+      },
+      {
+        "id": 1,
+        "name": "Grind Size",
+        "position": 1,
+        "visible": true,
+        "variation": false,
+        "options": ["Whole Beans", "Espresso", "Moka Pot", "Filter", "French Press"]
+      }
+    ],
+    "variations": [1021, 1022]
+  },
+  {
+    "id": 3,
+    "name": "Decaf Swiss Water",
+    "type": "simple",
+    "status": "publish",
+    "description": "<p>Premium decaffeinated coffee using the <strong>Swiss Water Process</strong>. 99.9% caffeine-free while retaining full flavor.</p>",
+    "short_description": "<p>Chemical-free decaf with full flavor.</p>",
+    "price": "16.99",
+    "regular_price": "16.99",
+    "sale_price": "",
+    "stock_status": "outofstock",
+    "stock_quantity": 0,
+    "attributes": [
+      {
+        "id": 1,
+        "name": "Grind Size",
+        "position": 0,
+        "visible": true,
+        "variation": false,
+        "options": ["Whole Beans", "Espresso", "Filter", "French Press"]
+      }
+    ],
+    "variations": []
+  }
+]
+
+
+
