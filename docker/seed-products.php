@@ -82,13 +82,16 @@ function create_simple_product($data) {
     $product->set_catalog_visibility('visible');
 
     // Set grind size attribute
+    $grind_opts = isset($data['grind_options']) ? $data['grind_options'] : $grind_options;
     $grind_attr = new WC_Product_Attribute();
+    $grind_attr->set_id(0); // 0 = custom product attribute
     $grind_attr->set_name('Grind Size');
-    $grind_attr->set_options($data['grind_options'] ?? $grind_options);
+    $grind_attr->set_position(0);
     $grind_attr->set_visible(true);
     $grind_attr->set_variation(false);
+    $grind_attr->set_options($grind_opts);
 
-    $product->set_attributes([$grind_attr]);
+    $product->set_attributes(array($grind_attr));
 
     $product_id = $product->save();
     echo "  Created simple product: {$data['name']} (ID: $product_id)\n";
@@ -100,7 +103,7 @@ function create_simple_product($data) {
  * Create a variable product with variations
  */
 function create_variable_product($data) {
-    global $grind_options, $size_options;
+    global $grind_options;
 
     if (product_exists($data['name'])) {
         echo "  Skipping (exists): {$data['name']}\n";
@@ -114,21 +117,31 @@ function create_variable_product($data) {
     $product->set_status('publish');
     $product->set_catalog_visibility('visible');
 
-    // Size attribute (for variations)
+    // Build attributes array - must use proper format for WooCommerce
+    $attributes = array();
+
+    // Size attribute (for variations) - use lowercase slug
     $size_attr = new WC_Product_Attribute();
+    $size_attr->set_id(0); // 0 = custom product attribute (not taxonomy)
     $size_attr->set_name('Size');
-    $size_attr->set_options($size_options);
+    $size_attr->set_position(0);
     $size_attr->set_visible(true);
     $size_attr->set_variation(true);
+    $size_attr->set_options($data['size_options']);
+    $attributes[] = $size_attr;
 
     // Grind size attribute (not for variations)
+    $grind_opts = isset($data['grind_options']) ? $data['grind_options'] : $grind_options;
     $grind_attr = new WC_Product_Attribute();
+    $grind_attr->set_id(0);
     $grind_attr->set_name('Grind Size');
-    $grind_attr->set_options($data['grind_options'] ?? $grind_options);
+    $grind_attr->set_position(1);
     $grind_attr->set_visible(true);
     $grind_attr->set_variation(false);
+    $grind_attr->set_options($grind_opts);
+    $attributes[] = $grind_attr;
 
-    $product->set_attributes([$size_attr, $grind_attr]);
+    $product->set_attributes($attributes);
 
     $product_id = $product->save();
     echo "  Created variable product: {$data['name']} (ID: $product_id)\n";
@@ -146,7 +159,8 @@ function create_variable_product($data) {
             $variation->set_manage_stock(true);
             $variation->set_stock_quantity($var_data['stock_quantity']);
         }
-        $variation->set_attributes(['size' => $var_data['size']]);
+        // Use lowercase attribute name for variation
+        $variation->set_attributes(array('size' => $var_data['size']));
         $variation->save();
         echo "    - Variation: {$var_data['size']} @ \${$var_data['regular_price']}\n";
     }
@@ -204,6 +218,7 @@ create_variable_product([
     'name' => 'House Blend Signature',
     'description' => '<p>Our signature <strong>House Blend</strong> combines beans from Brazil, Colombia, and Guatemala.</p><ul><li>Medium roast</li><li>Notes of caramel and cocoa</li><li>Low acidity</li></ul>',
     'short_description' => '<p>Signature blend with caramel and cocoa notes.</p>',
+    'size_options' => ['250g', '1kg'],
     'grind_options' => ['Whole Beans', 'Espresso', 'Moka Pot', 'Filter', 'French Press', 'Turkish'],
     'variations' => [
         [
@@ -228,6 +243,7 @@ create_variable_product([
     'name' => 'Single Origin Sumatra',
     'description' => '<p>A bold and earthy coffee from <strong>Sumatra, Indonesia</strong>.</p><p>Tasting notes include dark chocolate, tobacco, and a hint of spice. Full body with low acidity.</p><p>Wet-hulled processing gives this coffee its distinctive character.</p>',
     'short_description' => '<p>Bold Sumatran coffee with earthy, chocolatey notes.</p>',
+    'size_options' => ['250g', '1kg'],
     'grind_options' => ['Whole Beans', 'Espresso', 'Moka Pot', 'Filter', 'French Press'],
     'variations' => [
         [

@@ -21,7 +21,13 @@ else
     echo "==> WordPress already installed"
 fi
 
-# Install and activate WooCommerce
+# CRITICAL: Enable pretty permalinks for REST API to work
+echo "==> Configuring permalinks..."
+wp option update permalink_structure '/%postname%/'
+# Create .htaccess content via database - WordPress will use it
+wp rewrite flush 2>/dev/null || true
+
+# Install and activate WooCommerce (version 9.3.3 is compatible with WP 6.7)
 if ! wp plugin is-installed woocommerce 2>/dev/null; then
     echo "==> Installing WooCommerce..."
     wp plugin install woocommerce --activate
@@ -42,62 +48,79 @@ wp option update woocommerce_calc_taxes "no"
 # Enable REST API
 wp option update woocommerce_api_enabled "yes"
 
-# Create REST API keys if they don't exist
+# Create REST API keys using WooCommerce's PHP API (avoids MySQL client issues)
 echo "==> Setting up REST API keys..."
-EXISTING_KEY=$(wp db query "SELECT consumer_key FROM wp_woocommerce_api_keys WHERE description='EVA Terminal' LIMIT 1" --skip-column-names 2>/dev/null || echo "")
+wp eval '
+global $wpdb;
 
-if [ -z "$EXISTING_KEY" ]; then
-    echo "==> Creating new API keys..."
+// Check if key exists
+$existing = $wpdb->get_var("SELECT consumer_key FROM {$wpdb->prefix}woocommerce_api_keys WHERE description = \"EVA Terminal\" LIMIT 1");
 
-    # Generate keys using WooCommerce REST API key generation
-    CONSUMER_KEY="ck_$(openssl rand -hex 20)"
-    CONSUMER_SECRET="cs_$(openssl rand -hex 20)"
+if (!$existing) {
+    // Generate keys
+    $consumer_key = "ck_" . wc_rand_hash();
+    $consumer_secret = "cs_" . wc_rand_hash();
 
-    # Hash the keys for storage (WooCommerce uses truncated sha256)
-    KEY_HASH=$(echo -n "$CONSUMER_KEY" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-64)
-    SECRET_HASH=$(echo -n "$CONSUMER_SECRET" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-64)
+    $wpdb->insert(
+        $wpdb->prefix . "woocommerce_api_keys",
+        array(
+            "user_id" => 1,
+            "description" => "EVA Terminal",
+            "permissions" => "read",
+            "consumer_key" => wc_api_hash($consumer_key),
+            "consumer_secret" => $consumer_secret,
+            "truncated_key" => substr($consumer_key, -7),
+        )
+    );
 
-    # Insert into database
-    wp db query "INSERT INTO wp_woocommerce_api_keys (user_id, description, permissions, consumer_key, consumer_secret, truncated_key) VALUES (1, 'EVA Terminal', 'read', '$KEY_HASH', '$SECRET_HASH', '$(echo $CONSUMER_KEY | tail -c 8)')"
+    echo "\n============================================\n";
+    echo "WooCommerce API Keys Generated!\n";
+    echo "============================================\n";
+    echo "Consumer Key:    " . $consumer_key . "\n";
+    echo "Consumer Secret: " . $consumer_secret . "\n";
+    echo "\nAdd these to your environment:\n";
+    echo "  export WOO_BASE_URL=http://localhost:8080\n";
+    echo "  export WOO_CONSUMER_KEY=" . $consumer_key . "\n";
+    echo "  export WOO_CONSUMER_SECRET=" . $consumer_secret . "\n";
+    echo "============================================\n";
+} else {
+    echo "API keys already exist\n";
+}
+'
 
-    echo ""
-    echo "============================================"
-    echo "WooCommerce API Keys Generated!"
-    echo "============================================"
-    echo "Consumer Key:    $CONSUMER_KEY"
-    echo "Consumer Secret: $CONSUMER_SECRET"
-    echo ""
-    echo "Add these to your environment:"
-    echo "  export WOO_BASE_URL=http://localhost:8080"
-    echo "  export WOO_CONSUMER_KEY=$CONSUMER_KEY"
-    echo "  export WOO_CONSUMER_SECRET=$CONSUMER_SECRET"
-    echo "============================================"
-    echo ""
-else
-    echo "==> API keys already exist"
-fi
-
-# Create product attributes
+# Create product attributes using WooCommerce PHP API
 echo "==> Creating product attributes..."
+wp eval '
+global $wpdb;
 
-# Check if Grind Size attribute exists
-GRIND_ATTR_ID=$(wp db query "SELECT attribute_id FROM wp_woocommerce_attribute_taxonomies WHERE attribute_name='grind-size' LIMIT 1" --skip-column-names 2>/dev/null || echo "")
+$attributes = array(
+    array("name" => "grind-size", "label" => "Grind Size"),
+    array("name" => "size", "label" => "Size"),
+);
 
-if [ -z "$GRIND_ATTR_ID" ]; then
-    wp db query "INSERT INTO wp_woocommerce_attribute_taxonomies (attribute_name, attribute_label, attribute_type, attribute_orderby) VALUES ('grind-size', 'Grind Size', 'select', 'menu_order')"
-    echo "  Created: Grind Size attribute"
-fi
+foreach ($attributes as $attr) {
+    $exists = $wpdb->get_var($wpdb->prepare(
+        "SELECT attribute_id FROM {$wpdb->prefix}woocommerce_attribute_taxonomies WHERE attribute_name = %s",
+        $attr["name"]
+    ));
 
-# Check if Size attribute exists
-SIZE_ATTR_ID=$(wp db query "SELECT attribute_id FROM wp_woocommerce_attribute_taxonomies WHERE attribute_name='size' LIMIT 1" --skip-column-names 2>/dev/null || echo "")
-
-if [ -z "$SIZE_ATTR_ID" ]; then
-    wp db query "INSERT INTO wp_woocommerce_attribute_taxonomies (attribute_name, attribute_label, attribute_type, attribute_orderby) VALUES ('size', 'Size', 'select', 'menu_order')"
-    echo "  Created: Size attribute"
-fi
+    if (!$exists) {
+        $wpdb->insert(
+            $wpdb->prefix . "woocommerce_attribute_taxonomies",
+            array(
+                "attribute_name" => $attr["name"],
+                "attribute_label" => $attr["label"],
+                "attribute_type" => "select",
+                "attribute_orderby" => "menu_order",
+            )
+        );
+        echo "  Created: " . $attr["label"] . " attribute\n";
+    }
+}
+'
 
 # Flush rewrite rules to register attributes
-wp rewrite flush
+wp rewrite flush 2>/dev/null || true
 
 # Run the PHP seed script
 echo "==> Seeding sample coffee products..."
