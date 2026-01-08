@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-woossh
-mockwoo
+/woossh
+/mockwoo
 
 # Test binary
 *.test
@@ -40,6 +40,5 @@ allowlist_authorized_keys
 # Build output
 bin/
 dist/
-
 
 

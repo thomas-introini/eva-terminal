@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1011,
+    "price": "14.99",
+    "regular_price": "14.99",
+    "sale_price": "",
+    "stock_status": "instock",
+    "stock_quantity": 25,
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "option": "250g"
+      }
+    ]
+  },
+  {
+    "id": 1012,
+    "price": "49.99",
+    "regular_price": "54.99",
+    "sale_price": "49.99",
+    "stock_status": "instock",
+    "stock_quantity": 15,
+    "attributes": [
+      {
+        "id": 2,
+        "name": "Size",
+        "option": "1kg"
+      }
+    ]
+  }
+]
+
+
+
