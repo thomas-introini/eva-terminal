@@ -103,5 +103,58 @@ func (v *Variation) GetAttributeValue(name string) string {
 	return ""
 }
 
+// ============================================
+// Order Types
+// ============================================
 
+// OrderRequest represents the data needed to create a WooCommerce order.
+type OrderRequest struct {
+	PaymentMethod      string          `json:"payment_method"`
+	PaymentMethodTitle string          `json:"payment_method_title"`
+	SetPaid            bool            `json:"set_paid"`
+	Billing            BillingAddress  `json:"billing"`
+	LineItems          []OrderLineItem `json:"line_items"`
+}
+
+// BillingAddress represents the billing address for an order.
+type BillingAddress struct {
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+	Phone     string `json:"phone,omitempty"`
+	Address1  string `json:"address_1"`
+	Address2  string `json:"address_2,omitempty"`
+	City      string `json:"city"`
+	State     string `json:"state,omitempty"`
+	Postcode  string `json:"postcode"`
+	Country   string `json:"country"`
+}
+
+// OrderLineItem represents a line item in an order.
+type OrderLineItem struct {
+	ProductID   int                     `json:"product_id"`
+	VariationID int                     `json:"variation_id,omitempty"`
+	Quantity    int                     `json:"quantity"`
+	MetaData    []OrderLineItemMetaData `json:"meta_data,omitempty"`
+}
+
+// OrderLineItemMetaData represents metadata for a line item (e.g., grind size).
+type OrderLineItemMetaData struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// OrderResponse represents the response from creating an order.
+type OrderResponse struct {
+	ID            int             `json:"id"`
+	Status        string          `json:"status"`
+	Currency      string          `json:"currency"`
+	Total         string          `json:"total"`
+	TotalTax      string          `json:"total_tax"`
+	Billing       BillingAddress  `json:"billing"`
+	LineItems     []OrderLineItem `json:"line_items"`
+	DateCreated   string          `json:"date_created"`
+	OrderKey      string          `json:"order_key"`
+	PaymentMethod string          `json:"payment_method"`
+}
 

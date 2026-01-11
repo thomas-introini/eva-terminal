@@ -1,6 +1,7 @@
 package woo
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -98,6 +99,23 @@ func (c *Client) GetVariations(ctx context.Context, productID int) ([]Variation,
 	return variations, nil
 }
 
+// GetPaymentGateways fetches available payment gateways.
+func (c *Client) GetPaymentGateways(ctx context.Context, result *[]PaymentGateway) error {
+	endpoint := "/wp-json/wc/v3/payment_gateways"
+	return c.doRequest(ctx, endpoint, nil, result)
+}
+
+// CreateOrder creates a new order in WooCommerce.
+func (c *Client) CreateOrder(ctx context.Context, order OrderRequest) (*OrderResponse, error) {
+	endpoint := "/wp-json/wc/v3/orders"
+
+	var response OrderResponse
+	if err := c.doPostRequest(ctx, endpoint, order, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // doRequest performs an HTTP GET request to the WooCommerce API.
 func (c *Client) doRequest(ctx context.Context, endpoint string, query url.Values, result interface{}) error {
 	// Add authentication if credentials are provided
@@ -127,6 +145,50 @@ func (c *Client) doRequest(ctx context.Context, endpoint string, query url.Value
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
+		return fmt.Errorf("decoding response: %w", err)
+	}
+
+	return nil
+}
+
+// doPostRequest performs an HTTP POST request to the WooCommerce API.
+func (c *Client) doPostRequest(ctx context.Context, endpoint string, body interface{}, result interface{}) error {
+	// Encode body as JSON
+	jsonBody, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("encoding request body: %w", err)
+	}
+
+	// Build URL with authentication
+	reqURL := c.baseURL + endpoint
+	if c.consumerKey != "" && c.consumerSecret != "" {
+		query := url.Values{}
+		query.Set("consumer_key", c.consumerKey)
+		query.Set("consumer_secret", c.consumerSecret)
+		reqURL += "?" + query.Encode()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(jsonBody))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("executing request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Accept 200 OK or 201 Created
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
