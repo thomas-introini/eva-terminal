@@ -66,7 +66,9 @@ func main() {
 
 	// Create WooCommerce client
 	clientOpts := []woo.ClientOption{}
+	log.Printf("WooCommerce API credentials: %s, %s", cfg.WooConsumerKey, cfg.WooConsumerSecret)
 	if cfg.WooConsumerKey != "" && cfg.WooConsumerSecret != "" {
+		log.Printf("Using WooCommerce API credentials from environment")
 		clientOpts = append(clientOpts, woo.WithCredentials(cfg.WooConsumerKey, cfg.WooConsumerSecret))
 	}
 	wooClient := woo.NewClient(cfg.WooBaseURL, clientOpts...)

@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -25,9 +24,8 @@ const (
 	ViewProductDetails
 	ViewConfigurator
 	ViewCart
-	ViewQuote // New: shows quote with shipping options
-	ViewPayment
-	ViewReview
+	ViewAddress // Address entry
+	ViewReview  // Review order with calculated totals
 	ViewOrderConfirmation
 )
 
@@ -43,7 +41,6 @@ type ProductListCacheKey struct {
 type Model struct {
 	// Dependencies
 	wooClient       *woo.Client
-	quoteClient     *woo.QuoteClient
 	productsCache   *cache.Cache[ProductListCacheKey, []woo.Product]
 	variationsCache *cache.Cache[int, []woo.Variation]
 
@@ -78,22 +75,13 @@ type Model struct {
 	// Local cart (per SSH session)
 	localCart *LocalCart
 
-	// Quote state
-	loadingQuote        bool
-	shippingSelectedIdx int
-
-	// Payment view
-	paymentGateways    []woo.PaymentGateway
-	paymentSelectedIdx int
-	loadingPayment     bool
-
 	// Review/Checkout
 	addressForm   *huh.Form
 	customerInfo  *CustomerInfo
 	creatingOrder bool
 
 	// Order confirmation
-	orderResponse *woo.CreateOrderResponse
+	orderResponse *woo.OrderResponse
 
 	// Error handling
 	err error
@@ -146,18 +134,8 @@ type (
 	variationsLoadedMsg struct {
 		variations []woo.Variation
 	}
-	// Quote API messages
-	quoteCreatedMsg struct {
-		quote *woo.QuoteResponse
-	}
-	couponValidatedMsg struct {
-		result *woo.CouponValidateResponse
-	}
-	paymentGatewaysLoadedMsg struct {
-		gateways []woo.PaymentGateway
-	}
 	orderCreatedMsg struct {
-		order *woo.CreateOrderResponse
+		order *woo.OrderResponse
 	}
 	errMsg struct {
 		err error
@@ -196,7 +174,6 @@ func NewModel(wooClient *woo.Client, productsCache *cache.Cache[ProductListCache
 
 	return Model{
 		wooClient:       wooClient,
-		quoteClient:     woo.NewQuoteClient(wooClient),
 		productsCache:   productsCache,
 		variationsCache: variationsCache,
 		viewState:       ViewProductList,
@@ -250,25 +227,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.initConfigurator()
 		}
 
-	// Quote API messages
-	case quoteCreatedMsg:
-		m.loadingQuote = false
-		m.localCart.SetQuote(msg.quote)
-		// Auto-select first shipping rate if available
-		if len(msg.quote.ShippingRates) > 0 {
-			m.shippingSelectedIdx = 0
-		}
-
-	case couponValidatedMsg:
-		// Handle coupon validation result
-		if msg.result.Valid {
-			m.localCart.AddCoupon(msg.result.Code)
-		}
-
-	case paymentGatewaysLoadedMsg:
-		m.loadingPayment = false
-		m.paymentGateways = msg.gateways
-
 	case orderCreatedMsg:
 		m.creatingOrder = false
 		m.orderResponse = msg.order
@@ -279,8 +237,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = msg.err
 		m.loadingProducts = false
 		m.loadingVariations = false
-		m.loadingQuote = false
-		m.loadingPayment = false
 		m.creatingOrder = false
 	}
 
@@ -309,7 +265,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-	case ViewQuote:
+	case ViewAddress:
 		if m.addressForm != nil {
 			form, cmd := m.addressForm.Update(msg)
 			if f, ok := form.(*huh.Form); ok {
@@ -342,10 +298,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleConfiguratorKeys(msg)
 	case ViewCart:
 		return m.handleCartKeys(msg)
-	case ViewQuote:
-		return m.handleQuoteKeys(msg)
-	case ViewPayment:
-		return m.handlePaymentKeys(msg)
+	case ViewAddress:
+		return m.handleAddressKeys(msg)
 	case ViewReview:
 		return m.handleReviewKeys(msg)
 	case ViewOrderConfirmation:
@@ -514,11 +468,10 @@ func (m Model) handleCartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "o":
-		// Proceed to checkout - get a quote
+		// Proceed to checkout - enter address
 		if !m.localCart.IsEmpty() {
 			m.initAddressForm()
-			m.addressForm.Init()
-			m.viewState = ViewQuote
+			m.viewState = ViewAddress
 		}
 		return m, nil
 
@@ -531,9 +484,8 @@ func (m Model) handleCartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleQuoteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAddressKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	log.Println("handleQuoteKeys", key)
 
 	switch key {
 	case "esc":
@@ -547,77 +499,13 @@ func (m Model) handleQuoteKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		form, cmd := m.addressForm.Update(msg)
 		if f, ok := form.(*huh.Form); ok {
 			m.addressForm = f
-			if m.customerInfo != nil && m.customerInfo.AddressConfirmed {
-				m.loadingQuote = true
-				m.customerInfo.AddressConfirmed = false
-				return m, m.createQuote()
+			// When form is completed, go to review
+			if m.addressForm.State == huh.StateCompleted {
+				m.viewState = ViewReview
+				return m, nil
 			}
 		}
 		return m, cmd
-	}
-
-	// Handle shipping rate selection (after quote is received)
-	if m.localCart.HasQuote() {
-		rates := m.localCart.Quote.ShippingRates
-		switch key {
-		case "up", "k":
-			if m.shippingSelectedIdx > 0 {
-				m.shippingSelectedIdx--
-			}
-			return m, nil
-
-		case "down", "j":
-			if m.shippingSelectedIdx < len(rates)-1 {
-				m.shippingSelectedIdx++
-			}
-			return m, nil
-
-		case "enter":
-			// Select shipping rate
-			if len(rates) > 0 && m.shippingSelectedIdx < len(rates) {
-				m.localCart.SelectShippingRate(rates[m.shippingSelectedIdx].RateID)
-			}
-			return m, nil
-
-		case "n":
-			// Proceed to payment if shipping is selected (or not needed)
-			if m.localCart.GetSelectedShippingRate() != nil || !m.localCart.Quote.NeedsShipping() {
-				m.loadingPayment = true
-				m.viewState = ViewPayment
-				return m, m.loadPaymentGateways()
-			}
-			return m, nil
-		}
-	}
-
-	return m, nil
-}
-
-func (m Model) handlePaymentKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	case "esc":
-		m.viewState = ViewQuote
-		return m, nil
-
-	case "up", "k":
-		if m.paymentSelectedIdx > 0 {
-			m.paymentSelectedIdx--
-		}
-		return m, nil
-
-	case "down", "j":
-		if m.paymentSelectedIdx < len(m.paymentGateways)-1 {
-			m.paymentSelectedIdx++
-		}
-		return m, nil
-
-	case "enter":
-		if len(m.paymentGateways) > 0 {
-			m.viewState = ViewReview
-		}
-		return m, nil
 	}
 
 	return m, nil
@@ -628,12 +516,12 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch key {
 	case "esc":
-		m.viewState = ViewPayment
+		m.viewState = ViewAddress
 		return m, nil
 
 	case "enter", "p":
-		// Create order from quote
-		if !m.creatingOrder && len(m.paymentGateways) > 0 && m.localCart.HasQuote() {
+		// Create order using WooCommerce v3 API
+		if !m.creatingOrder && !m.localCart.IsEmpty() {
 			m.creatingOrder = true
 			return m, m.createOrder()
 		}
@@ -684,14 +572,8 @@ func (m *Model) addToCart() {
 		return
 	}
 
-	// Build meta for grind size if specified
-	meta := make(map[string]string)
-	if m.selectedGrindSize != "" {
-		meta["grind"] = m.selectedGrindSize
-	}
-
-	// Create local cart item
-	item := NewLocalCartItemFromProduct(m.selectedProduct, m.selectedVariation, 1, meta)
+	// Create local cart item with grind size
+	item := NewLocalCartItemFromProduct(m.selectedProduct, m.selectedVariation, 1, m.selectedGrindSize)
 	m.localCart.AddItem(item)
 }
 
@@ -759,67 +641,20 @@ func (m *Model) initAddressForm() {
 	).WithShowHelp(true).WithShowErrors(true)
 }
 
-// Quote API commands
-
-func (m Model) createQuote() tea.Cmd {
-	return func() tea.Msg {
-		country := m.customerInfo.Country
-		if country == "" {
-			country = "US"
-		}
-
-		shippingAddress := woo.QuoteAddress{
-			FirstName: m.customerInfo.FirstName,
-			LastName:  m.customerInfo.LastName,
-			Email:     m.customerInfo.Email,
-			Address1:  m.customerInfo.Address,
-			City:      m.customerInfo.City,
-			Postcode:  m.customerInfo.Postcode,
-			Country:   country,
-		}
-
-		req := m.localCart.ToQuoteRequest(shippingAddress)
-
-		quote, err := m.quoteClient.CreateQuote(context.Background(), req)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("creating quote: %w", err)}
-		}
-		return quoteCreatedMsg{quote: quote}
-	}
-}
-
-func (m Model) loadPaymentGateways() tea.Cmd {
-	return func() tea.Msg {
-		// Use WooCommerce REST API for payment gateways
-		var gateways []woo.PaymentGateway
-		err := m.wooClient.GetPaymentGateways(context.Background(), &gateways)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("loading payment methods: %w", err)}
-		}
-
-		// Filter to enabled gateways
-		var enabled []woo.PaymentGateway
-		for _, gw := range gateways {
-			if gw.Enabled {
-				enabled = append(enabled, gw)
-			}
-		}
-		return paymentGatewaysLoadedMsg{gateways: enabled}
-	}
-}
+// Order commands
 
 func (m Model) createOrder() tea.Cmd {
 	return func() tea.Msg {
-		if m.localCart.Quote == nil {
-			return errMsg{err: fmt.Errorf("no quote available")}
+		if m.localCart.IsEmpty() {
+			return errMsg{err: fmt.Errorf("cart is empty")}
 		}
 
 		country := m.customerInfo.Country
 		if country == "" {
-			country = "US"
+			country = "IT" // Default to Italy
 		}
 
-		address := woo.QuoteAddress{
+		address := woo.BillingAddress{
 			FirstName: m.customerInfo.FirstName,
 			LastName:  m.customerInfo.LastName,
 			Email:     m.customerInfo.Email,
@@ -829,22 +664,48 @@ func (m Model) createOrder() tea.Cmd {
 			Country:   country,
 		}
 
-		paymentMethod := "cod"
-		if len(m.paymentGateways) > 0 && m.paymentSelectedIdx < len(m.paymentGateways) {
-			paymentMethod = m.paymentGateways[m.paymentSelectedIdx].ID
+		// Build line items from local cart
+		lineItems := make([]woo.OrderLineItem, len(m.localCart.Items))
+		for i, item := range m.localCart.Items {
+			lineItems[i] = woo.OrderLineItem{
+				ProductID:   item.ProductID,
+				VariationID: item.VariationID,
+				Quantity:    item.Quantity,
+			}
+			// Add grind size metadata if present
+			if item.GrindSize != "" {
+				lineItems[i].MetaData = []woo.OrderLineItemMetaData{
+					{Key: "pa_grind-size", Value: item.GrindSize},
+				}
+			}
 		}
 
-		req := woo.CreateOrderRequest{
-			QuoteID:         m.localCart.Quote.QuoteID,
-			IdempotencyKey:  fmt.Sprintf("order_%s_%d", m.localCart.Quote.QuoteID, m.paymentSelectedIdx),
-			ShippingRateID:  m.localCart.SelectedShippingRateID,
-			BillingAddress:  address,
-			ShippingAddress: address,
-			CustomerEmail:   m.customerInfo.Email,
-			PaymentMethod:   paymentMethod,
+		// Calculate shipping locally
+		shippingCost := m.localCart.CalculateShipping()
+		shippingMethodID := "flat_rate"
+		shippingMethodTitle := "Flat Rate"
+		if shippingCost == 0 {
+			shippingMethodID = "free_shipping"
+			shippingMethodTitle = "Free Shipping"
 		}
 
-		order, err := m.quoteClient.CreateOrder(context.Background(), req)
+		req := woo.OrderRequest{
+			PaymentMethod:      "bacs",
+			PaymentMethodTitle: "Bank Transfer",
+			SetPaid:            false,
+			Billing:            address,
+			Shipping:           &address,
+			LineItems:          lineItems,
+			ShippingLines: []woo.ShippingLine{
+				{
+					MethodID:    shippingMethodID,
+					MethodTitle: shippingMethodTitle,
+					Total:       fmt.Sprintf("%.2f", shippingCost),
+				},
+			},
+		}
+
+		order, err := m.wooClient.CreateOrder(context.Background(), req)
 		if err != nil {
 			return errMsg{err: fmt.Errorf("creating order: %w", err)}
 		}
@@ -1028,10 +889,8 @@ func (m Model) View() string {
 		content = m.viewConfigurator()
 	case ViewCart:
 		content = m.viewCart()
-	case ViewQuote:
-		content = m.viewQuote()
-	case ViewPayment:
-		content = m.viewPayment()
+	case ViewAddress:
+		content = m.viewAddress()
 	case ViewReview:
 		content = m.viewReview()
 	case ViewOrderConfirmation:
@@ -1251,13 +1110,18 @@ func (m Model) viewCart() string {
 		sb.WriteString("\n")
 	}
 
-	// Totals (local estimate)
+	// Totals (local estimate with shipping)
 	sb.WriteString("\n")
 	sb.WriteString(fmt.Sprintf("Subtotal: %s\n", m.localCart.GetSubtotal()))
-	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("Estimated Total: %s", m.localCart.GetTotal())))
+	sb.WriteString(fmt.Sprintf("Shipping: %s\n", m.localCart.GetShippingFormatted()))
+	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("Total: %s", m.localCart.GetTotal())))
 	sb.WriteString(fmt.Sprintf(" (%d items)", m.localCart.ItemCount()))
 	sb.WriteString("\n")
-	sb.WriteString(m.styles.Subtle.Render("(Taxes and shipping calculated at checkout)"))
+	if remaining := m.localCart.AmountUntilFreeShipping(); remaining > 0 {
+		sb.WriteString(m.styles.Subtle.Render(fmt.Sprintf("Add $%.2f more for free shipping", remaining)))
+	} else {
+		sb.WriteString(m.styles.Success.Render("✓ Qualifies for free shipping!"))
+	}
 	sb.WriteString("\n")
 
 	// Help bar
@@ -1267,20 +1131,14 @@ func (m Model) viewCart() string {
 	return m.styles.Box.Render(sb.String())
 }
 
-func (m Model) viewQuote() string {
+func (m Model) viewAddress() string {
 	var sb strings.Builder
 
 	// Header with progress
-	sb.WriteString(m.styles.HeaderTitle.Render("📦 Quote & Shipping"))
+	sb.WriteString(m.styles.HeaderTitle.Render("📦 Shipping Address"))
 	sb.WriteString("  ")
-	sb.WriteString(m.styles.Subtle.Render("Step 1 of 3"))
+	sb.WriteString(m.styles.Subtle.Render("Step 1 of 2"))
 	sb.WriteString("\n\n")
-
-	if m.loadingQuote {
-		sb.WriteString(m.listSpinner.View())
-		sb.WriteString(" Getting quote...")
-		return m.styles.Box.Render(sb.String())
-	}
 
 	if m.err != nil {
 		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err)))
@@ -1288,156 +1146,11 @@ func (m Model) viewQuote() string {
 	}
 
 	// Address form
-	if m.addressForm != nil && m.addressForm.State != huh.StateCompleted {
-		sb.WriteString(m.styles.Subtle.Render("Shipping Address:"))
-		sb.WriteString("\n")
+	if m.addressForm != nil {
 		sb.WriteString(m.addressForm.View())
 		sb.WriteString("\n")
 		sb.WriteString(m.styles.HelpBar.Render("esc back • tab navigate • enter submit"))
-		return m.styles.Box.Render(sb.String())
 	}
-
-	// Show address summary
-	if m.customerInfo.FirstName != "" {
-		sb.WriteString(m.styles.Subtle.Render("Ship to:"))
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("  %s %s\n", m.customerInfo.FirstName, m.customerInfo.LastName))
-		if m.customerInfo.Address != "" {
-			sb.WriteString(fmt.Sprintf("  %s\n", m.customerInfo.Address))
-		}
-		if m.customerInfo.City != "" || m.customerInfo.Postcode != "" {
-			sb.WriteString(fmt.Sprintf("  %s %s %s\n", m.customerInfo.City, m.customerInfo.Postcode, m.customerInfo.Country))
-		}
-		sb.WriteString("\n")
-	}
-
-	// Quote details
-	if m.localCart.HasQuote() {
-		quote := m.localCart.Quote
-
-		// Show line items with calculated prices
-		sb.WriteString(m.styles.Subtle.Render("Quote Items:"))
-		sb.WriteString("\n")
-		for _, item := range quote.LineItems {
-			sb.WriteString(fmt.Sprintf("  • %s x%d = %s\n", item.Name, item.Quantity, quote.FormatPrice(item.LineTotal)))
-		}
-		sb.WriteString("\n")
-
-		// Shipping rate selection
-		if len(quote.ShippingRates) > 0 {
-			sb.WriteString(m.styles.Subtle.Render("Select Shipping Method:"))
-			sb.WriteString("\n\n")
-
-			for i, rate := range quote.ShippingRates {
-				prefix := "  "
-				if i == m.shippingSelectedIdx {
-					prefix = m.styles.Highlight.Render("▸ ")
-				}
-
-				price := quote.FormatPrice(rate.Cost)
-				line := fmt.Sprintf("%s%s - %s", prefix, rate.Label, price)
-				if rate.RateID == m.localCart.SelectedShippingRateID {
-					line += m.styles.Success.Render(" ✓")
-				}
-				if i == m.shippingSelectedIdx {
-					sb.WriteString(m.styles.Highlight.Render(line))
-				} else {
-					sb.WriteString(line)
-				}
-				sb.WriteString("\n")
-			}
-			sb.WriteString("\n")
-		} else {
-			sb.WriteString(m.styles.Success.Render("✓ No shipping required"))
-			sb.WriteString("\n\n")
-		}
-
-		// Totals
-		sb.WriteString(fmt.Sprintf("Subtotal: %s\n", quote.FormatPrice(quote.Totals.Subtotal)))
-		if quote.Totals.Discount != "0" {
-			sb.WriteString(fmt.Sprintf("Discount: -%s\n", quote.FormatPrice(quote.Totals.Discount)))
-		}
-		if m.localCart.GetSelectedShippingRate() != nil {
-			sb.WriteString(fmt.Sprintf("Shipping: %s\n", m.localCart.GetShipping()))
-		}
-		if quote.Totals.Tax != "0" {
-			sb.WriteString(fmt.Sprintf("Tax: %s\n", quote.FormatPrice(quote.Totals.Tax)))
-		}
-		sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("Total: %s", quote.FormatPrice(quote.Totals.Total))))
-		sb.WriteString("\n")
-
-		sb.WriteString("\n")
-		sb.WriteString(m.styles.HelpBar.Render("↑/↓ select • enter confirm • n next step • esc back"))
-	} else {
-		sb.WriteString(m.styles.Subtle.Render("Enter your address to get a quote"))
-	}
-
-	return m.styles.Box.Render(sb.String())
-}
-
-func (m Model) viewPayment() string {
-	var sb strings.Builder
-
-	// Header with progress
-	sb.WriteString(m.styles.HeaderTitle.Render("💳 Payment"))
-	sb.WriteString("  ")
-	sb.WriteString(m.styles.Subtle.Render("Step 2 of 3"))
-	sb.WriteString("\n\n")
-
-	if m.loadingPayment {
-		sb.WriteString(m.listSpinner.View())
-		sb.WriteString(" Loading payment methods...")
-		return m.styles.Box.Render(sb.String())
-	}
-
-	if m.err != nil {
-		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err)))
-		sb.WriteString("\n\n")
-	}
-
-	// Order summary
-	sb.WriteString(m.styles.Subtle.Render("Order Summary:"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  Subtotal: %s\n", m.localCart.GetSubtotal()))
-	if m.localCart.GetShipping() != "$0.00" {
-		sb.WriteString(fmt.Sprintf("  Shipping: %s\n", m.localCart.GetShipping()))
-	}
-	if m.localCart.GetTax() != "$0.00" {
-		sb.WriteString(fmt.Sprintf("  Tax: %s\n", m.localCart.GetTax()))
-	}
-	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("  Total: %s", m.localCart.GetTotal())))
-	sb.WriteString("\n\n")
-
-	// Payment methods
-	if len(m.paymentGateways) > 0 {
-		sb.WriteString(m.styles.Subtle.Render("Select Payment Method:"))
-		sb.WriteString("\n\n")
-
-		for i, gateway := range m.paymentGateways {
-			prefix := "  "
-			if i == m.paymentSelectedIdx {
-				prefix = m.styles.Highlight.Render("▸ ")
-			}
-
-			line := fmt.Sprintf("%s%s", prefix, gateway.Title)
-			if gateway.Description != "" {
-				line += fmt.Sprintf(" - %s", StripHTML(gateway.Description))
-			}
-			if i == m.paymentSelectedIdx {
-				sb.WriteString(m.styles.Highlight.Render(line))
-			} else {
-				sb.WriteString(line)
-			}
-			sb.WriteString("\n")
-		}
-	} else {
-		sb.WriteString(m.styles.Subtle.Render("No payment methods available"))
-		sb.WriteString("\n")
-	}
-
-	// Help bar
-	sb.WriteString("\n")
-	sb.WriteString(m.styles.HelpBar.Render("↑/↓ select • enter continue • esc back"))
 
 	return m.styles.Box.Render(sb.String())
 }
@@ -1448,7 +1161,7 @@ func (m Model) viewReview() string {
 	// Header with progress
 	sb.WriteString(m.styles.HeaderTitle.Render("📋 Review Order"))
 	sb.WriteString("  ")
-	sb.WriteString(m.styles.Subtle.Render("Step 3 of 3"))
+	sb.WriteString(m.styles.Subtle.Render("Step 2 of 2"))
 	sb.WriteString("\n\n")
 
 	if m.creatingOrder {
@@ -1473,44 +1186,40 @@ func (m Model) viewReview() string {
 	sb.WriteString(fmt.Sprintf("  %s\n", m.customerInfo.Email))
 	sb.WriteString("\n")
 
-	// Shipping method
-	if rate := m.localCart.GetSelectedShippingRate(); rate != nil {
-		sb.WriteString(m.styles.Subtle.Render("Shipping Method:"))
-		sb.WriteString("\n")
-		price := m.localCart.Quote.FormatPrice(rate.Cost)
-		sb.WriteString(fmt.Sprintf("  %s - %s\n\n", rate.Label, price))
-	}
-
-	// Payment method
-	if len(m.paymentGateways) > 0 && m.paymentSelectedIdx < len(m.paymentGateways) {
-		sb.WriteString(m.styles.Subtle.Render("Payment Method:"))
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("  %s\n\n", m.paymentGateways[m.paymentSelectedIdx].Title))
-	}
-
 	// Items
 	sb.WriteString(m.styles.Subtle.Render("Items:"))
 	sb.WriteString("\n")
-	if m.localCart.HasQuote() {
-		for _, item := range m.localCart.Quote.LineItems {
-			total := m.localCart.Quote.FormatPrice(item.LineTotal)
-			sb.WriteString(fmt.Sprintf("  • %s x%d = %s\n", item.Name, item.Quantity, total))
-		}
+	for _, item := range m.localCart.Items {
+		itemTotal := item.Price * float64(item.Quantity)
+		sb.WriteString(fmt.Sprintf("  • %s x%d = $%.2f\n", item.Name, item.Quantity, itemTotal))
 	}
 	sb.WriteString("\n")
 
+	// Shipping method (calculated locally)
+	shippingCost := m.localCart.CalculateShipping()
+	shippingLabel := "Flat Rate"
+	if shippingCost == 0 {
+		shippingLabel = "Free Shipping"
+	}
+	sb.WriteString(m.styles.Subtle.Render("Shipping Method:"))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  %s - $%.2f\n\n", shippingLabel, shippingCost))
+
 	// Totals
-	sb.WriteString(fmt.Sprintf("Subtotal: %s\n", m.localCart.GetSubtotal()))
-	if m.localCart.GetShipping() != "$0.00" {
-		sb.WriteString(fmt.Sprintf("Shipping: %s\n", m.localCart.GetShipping()))
+	subtotal := m.localCart.Subtotal()
+	total := m.localCart.CalculateTotal()
+	sb.WriteString(fmt.Sprintf("Subtotal: $%.2f\n", subtotal))
+	if shippingCost > 0 {
+		sb.WriteString(fmt.Sprintf("Shipping: $%.2f\n", shippingCost))
+	} else {
+		sb.WriteString(m.styles.Success.Render("Shipping: FREE\n"))
 	}
-	if m.localCart.GetDiscount() != "$0.00" {
-		sb.WriteString(fmt.Sprintf("Discount: -%s\n", m.localCart.GetDiscount()))
-	}
-	if m.localCart.GetTax() != "$0.00" {
-		sb.WriteString(fmt.Sprintf("Tax: %s\n", m.localCart.GetTax()))
-	}
-	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("\nTotal: %s", m.localCart.GetTotal())))
+	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("\nTotal: $%.2f", total)))
+	sb.WriteString("\n")
+
+	// Payment note
+	sb.WriteString("\n")
+	sb.WriteString(m.styles.Subtle.Render("Payment: Bank Transfer (BACS)"))
 	sb.WriteString("\n")
 
 	// Help bar
@@ -1528,8 +1237,9 @@ func (m Model) viewOrderConfirmation() string {
 	sb.WriteString("\n\n")
 
 	if m.orderResponse != nil {
-		sb.WriteString(fmt.Sprintf("Order #%d\n", m.orderResponse.OrderID))
+		sb.WriteString(fmt.Sprintf("Order #%d\n", m.orderResponse.ID))
 		sb.WriteString(fmt.Sprintf("Status: %s\n", m.orderResponse.Status))
+		sb.WriteString(fmt.Sprintf("Total: %s %s\n", m.orderResponse.Currency, m.orderResponse.Total))
 		sb.WriteString(fmt.Sprintf("Order Key: %s\n", m.orderResponse.OrderKey))
 
 		sb.WriteString("\n")
@@ -1547,10 +1257,7 @@ func (m Model) viewOrderConfirmation() string {
 		sb.WriteString("\n")
 		sb.WriteString(m.styles.Subtle.Render("Next Step:"))
 		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("  %s\n", m.orderResponse.NextAction))
-		if m.orderResponse.PaymentURL != "" {
-			sb.WriteString(fmt.Sprintf("  Payment URL: %s\n", m.orderResponse.PaymentURL))
-		}
+		sb.WriteString("  Complete payment via Bank Transfer (BACS)\n")
 	}
 
 	if m.err != nil {

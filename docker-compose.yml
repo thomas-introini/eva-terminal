@@ -48,7 +48,6 @@ services:
       - wp_data:/var/www/html
       - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
       - ./docker/allow-rest-api.php:/var/www/html/wp-content/mu-plugins/allow-rest-api.php:ro
-      - ./wp-plugin/eva-checkout:/var/www/html/wp-content/plugins/eva-checkout
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
       interval: 10s
@@ -74,7 +73,6 @@ services:
       - wp_data:/var/www/html
       - ./docker/setup.sh:/setup.sh:ro
       - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
-      - ./wp-plugin/eva-checkout:/var/www/html/wp-content/plugins/eva-checkout
     entrypoint: ["/bin/sh", "/setup.sh"]
     networks:
       - woo-network

@@ -1,5 +1,8 @@
 .PHONY: dev test fmt lint build clean mockwoo woossh docker-up docker-down docker-logs docker-seed dev-docker
 
+include .env
+export
+
 # Default target
 all: build
 

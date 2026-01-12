@@ -36,10 +36,6 @@ else
     wp plugin activate woocommerce 2>/dev/null || true
 fi
 
-# Activate EVA Checkout plugin (mounted from host)
-echo "==> Activating EVA Checkout plugin..."
-wp plugin activate eva-checkout 2>/dev/null || echo "    (EVA Checkout activation skipped - may need WooCommerce first)"
-
 # Configure WooCommerce
 echo "==> Configuring WooCommerce..."
 wp option update woocommerce_store_address "123 Coffee Street"
@@ -134,8 +130,6 @@ echo ""
 echo "==> Setup complete!"
 echo "==> WordPress admin: http://localhost:8080/wp-admin (admin/admin)"
 echo "==> WooCommerce REST API: http://localhost:8080/wp-json/wc/v3/"
-echo "==> EVA Checkout API: http://localhost:8080/wp-json/eva/v1/"
-echo "==> Health check: curl http://localhost:8080/wp-json/eva/v1/health"
 echo ""
 
 # Keep container alive briefly for logs

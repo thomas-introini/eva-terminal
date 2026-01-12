@@ -6,20 +6,28 @@ import (
 	"github.com/thomas/eva-terminal-go/internal/woo"
 )
 
+// ShippingConfig holds the shipping calculation settings.
+// Since we only ship to Italy with simple flat rate / free shipping threshold.
+type ShippingConfig struct {
+	FlatRateCost    float64 // e.g., 5.00
+	FreeShippingMin float64 // e.g., 50.00 (free if subtotal >= this)
+}
+
+// DefaultShippingConfig returns the default shipping configuration.
+func DefaultShippingConfig() ShippingConfig {
+	return ShippingConfig{
+		FlatRateCost:    5.00,
+		FreeShippingMin: 50.00,
+	}
+}
+
 // LocalCart manages cart state locally per SSH session.
-// It stores items, applies coupons, and holds quote responses.
 type LocalCart struct {
 	// Items in the cart
 	Items []LocalCartItem
 
-	// Applied coupon codes
-	Coupons []string
-
-	// Current quote from server (nil if not yet quoted)
-	Quote *woo.QuoteResponse
-
-	// Selected shipping rate ID
-	SelectedShippingRateID string
+	// Shipping configuration
+	ShippingConfig ShippingConfig
 
 	// UI state
 	SelectedIdx int
@@ -29,19 +37,19 @@ type LocalCart struct {
 type LocalCartItem struct {
 	ProductID   int
 	VariationID int
-	ProductName string
-	VariantName string // e.g., "250g"
-	Price       float64
+	Name        string            // Display name
+	Price       float64           // Unit price
 	Quantity    int
-	Meta        map[string]string // e.g., {"grind": "Fine"}
+	GrindSize   string            // Selected grind size (e.g., "Fine", "Whole Beans")
+	Meta        map[string]string // Additional metadata
 }
 
 // NewLocalCart creates a new empty local cart.
 func NewLocalCart() *LocalCart {
 	return &LocalCart{
-		Items:       make([]LocalCartItem, 0),
-		Coupons:     make([]string, 0),
-		SelectedIdx: 0,
+		Items:          make([]LocalCartItem, 0),
+		ShippingConfig: DefaultShippingConfig(),
+		SelectedIdx:    0,
 	}
 }
 
@@ -50,22 +58,20 @@ func NewLocalCart() *LocalCart {
 // ============================================
 
 // AddItem adds an item to the cart.
-// If the same product/variation exists, it increments quantity.
+// If the same product/variation/grind exists, it increments quantity.
 func (c *LocalCart) AddItem(item LocalCartItem) {
 	// Check for existing item
 	for i := range c.Items {
 		if c.Items[i].ProductID == item.ProductID &&
 			c.Items[i].VariationID == item.VariationID &&
-			metaEqual(c.Items[i].Meta, item.Meta) {
+			c.Items[i].GrindSize == item.GrindSize {
 			c.Items[i].Quantity += item.Quantity
-			c.invalidateQuote()
 			return
 		}
 	}
 
 	// Add new item
 	c.Items = append(c.Items, item)
-	c.invalidateQuote()
 }
 
 // UpdateQuantity updates the quantity of an item by index.
@@ -79,7 +85,6 @@ func (c *LocalCart) UpdateQuantity(index int, quantity int) bool {
 	}
 
 	c.Items[index].Quantity = quantity
-	c.invalidateQuote()
 	return true
 }
 
@@ -90,7 +95,6 @@ func (c *LocalCart) RemoveItem(index int) bool {
 	}
 
 	c.Items = append(c.Items[:index], c.Items[index+1:]...)
-	c.invalidateQuote()
 
 	// Adjust selected index
 	if c.SelectedIdx >= len(c.Items) && len(c.Items) > 0 {
@@ -102,71 +106,7 @@ func (c *LocalCart) RemoveItem(index int) bool {
 // Clear removes all items from the cart.
 func (c *LocalCart) Clear() {
 	c.Items = make([]LocalCartItem, 0)
-	c.Coupons = make([]string, 0)
-	c.Quote = nil
-	c.SelectedShippingRateID = ""
 	c.SelectedIdx = 0
-}
-
-// ============================================
-// Coupon Operations
-// ============================================
-
-// AddCoupon adds a coupon code to the cart.
-func (c *LocalCart) AddCoupon(code string) {
-	// Check for duplicate
-	for _, existing := range c.Coupons {
-		if existing == code {
-			return
-		}
-	}
-	c.Coupons = append(c.Coupons, code)
-	c.invalidateQuote()
-}
-
-// RemoveCoupon removes a coupon code from the cart.
-func (c *LocalCart) RemoveCoupon(code string) {
-	for i, existing := range c.Coupons {
-		if existing == code {
-			c.Coupons = append(c.Coupons[:i], c.Coupons[i+1:]...)
-			c.invalidateQuote()
-			return
-		}
-	}
-}
-
-// ============================================
-// Quote Operations
-// ============================================
-
-// SetQuote stores the quote response from the server.
-func (c *LocalCart) SetQuote(quote *woo.QuoteResponse) {
-	c.Quote = quote
-	c.SelectedShippingRateID = ""
-}
-
-// HasQuote returns true if a valid quote exists.
-func (c *LocalCart) HasQuote() bool {
-	return c.Quote != nil && !c.Quote.IsExpired()
-}
-
-// SelectShippingRate sets the selected shipping rate.
-func (c *LocalCart) SelectShippingRate(rateID string) {
-	c.SelectedShippingRateID = rateID
-}
-
-// GetSelectedShippingRate returns the selected shipping rate.
-func (c *LocalCart) GetSelectedShippingRate() *woo.QuoteShippingRate {
-	if c.Quote == nil || c.SelectedShippingRateID == "" {
-		return nil
-	}
-	return c.Quote.GetShippingRate(c.SelectedShippingRateID)
-}
-
-// invalidateQuote clears the quote when cart changes.
-func (c *LocalCart) invalidateQuote() {
-	c.Quote = nil
-	c.SelectedShippingRateID = ""
 }
 
 // ============================================
@@ -215,10 +155,10 @@ func (c *LocalCart) MoveDown() {
 }
 
 // ============================================
-// Price Calculations (Local Estimates)
+// Price Calculations
 // ============================================
 
-// Subtotal returns the local subtotal estimate.
+// Subtotal returns the cart subtotal (sum of line totals).
 func (c *LocalCart) Subtotal() float64 {
 	var total float64
 	for _, item := range c.Items {
@@ -227,76 +167,55 @@ func (c *LocalCart) Subtotal() float64 {
 	return total
 }
 
-// GetSubtotal returns formatted subtotal.
-// Uses quote data if available, otherwise local estimate.
+// CalculateShipping returns the shipping cost based on config.
+// Returns 0 if subtotal >= free shipping threshold.
+func (c *LocalCart) CalculateShipping() float64 {
+	if c.IsEmpty() {
+		return 0
+	}
+	subtotal := c.Subtotal()
+	if subtotal >= c.ShippingConfig.FreeShippingMin {
+		return 0
+	}
+	return c.ShippingConfig.FlatRateCost
+}
+
+// CalculateTotal returns the cart total (subtotal + shipping).
+func (c *LocalCart) CalculateTotal() float64 {
+	return c.Subtotal() + c.CalculateShipping()
+}
+
+// QualifiesForFreeShipping returns true if free shipping applies.
+func (c *LocalCart) QualifiesForFreeShipping() bool {
+	return c.Subtotal() >= c.ShippingConfig.FreeShippingMin
+}
+
+// AmountUntilFreeShipping returns how much more is needed for free shipping.
+func (c *LocalCart) AmountUntilFreeShipping() float64 {
+	remaining := c.ShippingConfig.FreeShippingMin - c.Subtotal()
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
+}
+
+// GetSubtotal returns the formatted subtotal string.
 func (c *LocalCart) GetSubtotal() string {
-	if c.Quote != nil {
-		return c.Quote.FormatPrice(c.Quote.Totals.Subtotal)
-	}
 	return fmt.Sprintf("$%.2f", c.Subtotal())
 }
 
-// GetDiscount returns formatted discount.
-func (c *LocalCart) GetDiscount() string {
-	if c.Quote != nil {
-		return c.Quote.FormatPrice(c.Quote.Totals.Discount)
-	}
-	return "$0.00"
-}
-
-// GetShipping returns formatted shipping.
-func (c *LocalCart) GetShipping() string {
-	if c.Quote != nil {
-		rate := c.GetSelectedShippingRate()
-		if rate != nil {
-			return c.Quote.FormatPrice(rate.Cost)
-		}
-		return c.Quote.FormatPrice(c.Quote.Totals.Shipping)
-	}
-	return "$0.00"
-}
-
-// GetTax returns formatted tax.
-func (c *LocalCart) GetTax() string {
-	if c.Quote != nil {
-		return c.Quote.FormatPrice(c.Quote.Totals.Tax)
-	}
-	return "$0.00"
-}
-
-// GetTotal returns formatted total.
+// GetTotal returns the formatted total string.
 func (c *LocalCart) GetTotal() string {
-	if c.Quote != nil {
-		return c.Quote.FormatPrice(c.Quote.Totals.Total)
-	}
-	return fmt.Sprintf("$%.2f", c.Subtotal())
+	return fmt.Sprintf("$%.2f", c.CalculateTotal())
 }
 
-// ============================================
-// Conversion Methods
-// ============================================
-
-// ToQuoteItems converts cart items to QuoteItem slice for API requests.
-func (c *LocalCart) ToQuoteItems() []woo.QuoteItem {
-	items := make([]woo.QuoteItem, len(c.Items))
-	for i, item := range c.Items {
-		items[i] = woo.QuoteItem{
-			ProductID:   item.ProductID,
-			VariationID: item.VariationID,
-			Quantity:    item.Quantity,
-			Meta:        item.Meta,
-		}
+// GetShippingFormatted returns the formatted shipping cost string.
+func (c *LocalCart) GetShippingFormatted() string {
+	shipping := c.CalculateShipping()
+	if shipping == 0 {
+		return "FREE"
 	}
-	return items
-}
-
-// ToQuoteRequest builds a QuoteRequest from cart state.
-func (c *LocalCart) ToQuoteRequest(shippingAddress woo.QuoteAddress) woo.QuoteRequest {
-	return woo.QuoteRequest{
-		Items:           c.ToQuoteItems(),
-		Coupons:         c.Coupons,
-		ShippingAddress: shippingAddress,
-	}
+	return fmt.Sprintf("$%.2f", shipping)
 }
 
 // ============================================
@@ -305,12 +224,9 @@ func (c *LocalCart) ToQuoteRequest(shippingAddress woo.QuoteAddress) woo.QuoteRe
 
 // GetItemDisplayName returns a display name for a cart item.
 func (item *LocalCartItem) GetDisplayName() string {
-	name := item.ProductName
-	if item.VariantName != "" {
-		name = fmt.Sprintf("%s (%s)", name, item.VariantName)
-	}
-	if grind, ok := item.Meta["grind"]; ok && grind != "" {
-		name = fmt.Sprintf("%s - %s", name, grind)
+	name := item.Name
+	if item.GrindSize != "" {
+		name = fmt.Sprintf("%s - %s", name, item.GrindSize)
 	}
 	return name
 }
@@ -326,37 +242,30 @@ func (item *LocalCartItem) GetFormattedTotal() string {
 }
 
 // ============================================
-// Helper Functions
+// Factory Methods
 // ============================================
 
-// metaEqual compares two meta maps for equality.
-func metaEqual(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
-}
-
 // NewLocalCartItemFromProduct creates a LocalCartItem from product data.
-func NewLocalCartItemFromProduct(product *woo.Product, variation *woo.Variation, quantity int, meta map[string]string) LocalCartItem {
+func NewLocalCartItemFromProduct(product *woo.Product, variation *woo.Variation, quantity int, grindSize string) LocalCartItem {
 	item := LocalCartItem{
 		ProductID: product.ID,
 		Quantity:  quantity,
-		Meta:      meta,
+		GrindSize: grindSize,
+		Meta:      make(map[string]string),
 	}
 
 	if variation != nil {
 		item.VariationID = variation.ID
-		item.ProductName = product.Name
-		item.VariantName = variation.GetAttributeValue("Size")
+		// Build display name with variant info
+		variantName := variation.GetAttributeValue("Size")
+		if variantName != "" {
+			item.Name = fmt.Sprintf("%s (%s)", product.Name, variantName)
+		} else {
+			item.Name = product.Name
+		}
 		item.Price = parsePrice(variation.GetDisplayPrice())
 	} else {
-		item.ProductName = product.Name
+		item.Name = product.Name
 		item.Price = parsePrice(product.GetDisplayPrice())
 	}
 

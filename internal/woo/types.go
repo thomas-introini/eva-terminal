@@ -109,11 +109,20 @@ func (v *Variation) GetAttributeValue(name string) string {
 
 // OrderRequest represents the data needed to create a WooCommerce order.
 type OrderRequest struct {
-	PaymentMethod      string          `json:"payment_method"`
-	PaymentMethodTitle string          `json:"payment_method_title"`
-	SetPaid            bool            `json:"set_paid"`
-	Billing            BillingAddress  `json:"billing"`
-	LineItems          []OrderLineItem `json:"line_items"`
+	PaymentMethod      string           `json:"payment_method"`
+	PaymentMethodTitle string           `json:"payment_method_title"`
+	SetPaid            bool             `json:"set_paid"`
+	Billing            BillingAddress   `json:"billing"`
+	Shipping           *BillingAddress  `json:"shipping,omitempty"`
+	LineItems          []OrderLineItem  `json:"line_items"`
+	ShippingLines      []ShippingLine   `json:"shipping_lines,omitempty"`
+}
+
+// ShippingLine represents a shipping line in an order.
+type ShippingLine struct {
+	MethodID    string `json:"method_id"`
+	MethodTitle string `json:"method_title"`
+	Total       string `json:"total"`
 }
 
 // BillingAddress represents the billing address for an order.
@@ -158,3 +167,16 @@ type OrderResponse struct {
 	PaymentMethod string          `json:"payment_method"`
 }
 
+// PaymentGateway represents an available payment method.
+type PaymentGateway struct {
+	ID                string                 `json:"id"`
+	Title             string                 `json:"title"`
+	Description       string                 `json:"description"`
+	Order             int                    `json:"order"`
+	Enabled           bool                   `json:"enabled"`
+	MethodTitle       string                 `json:"method_title"`
+	MethodDescription string                 `json:"method_description"`
+	MethodSupports    []string               `json:"method_supports"`
+	Settings          map[string]interface{} `json:"settings"`
+	NeedsSetup        bool                   `json:"needs_setup"`
+}
