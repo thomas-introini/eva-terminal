@@ -1,0 +1,11 @@
+services:
+  wordpress:
+    environment:
+      EVA_TERMINAL_FAKE_STRIPE: "1"
+    volumes:
+      - ./docker/fake-stripe.php:/var/www/html/wp-content/mu-plugins/eva-fake-stripe.php:ro
+  wpcli:
+    environment:
+      EVA_TERMINAL_FAKE_STRIPE: "1"
+    volumes:
+      - ./docker/fake-stripe.php:/var/www/html/wp-content/mu-plugins/eva-fake-stripe.php:ro

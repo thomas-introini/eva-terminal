@@ -1,7 +1,6 @@
 services:
   db:
     image: mysql:8.0
-    container_name: woo-mysql
     restart: unless-stopped
     command: --default-authentication-plugin=mysql_native_password
     environment:
@@ -31,23 +30,25 @@ services:
 
   wordpress:
     image: wordpress:php8.2-apache
-    container_name: woo-wordpress
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${WOO_HTTP_PORT:-8080}:80"
     environment:
       WORDPRESS_DB_HOST: db:3306
       WORDPRESS_DB_USER: wordpress
       WORDPRESS_DB_PASSWORD: wordpress
       WORDPRESS_DB_NAME: wordpress
       WORDPRESS_DEBUG: 1
+      EVA_TERMINAL_BRIDGE_KEY: ${EVA_BRIDGE_KEY:?Set EVA_BRIDGE_KEY}
+      WORDPRESS_CONFIG_EXTRA: define('EVA_TERMINAL_BRIDGE_KEY', getenv('EVA_TERMINAL_BRIDGE_KEY'));
     volumes:
       - wp_data:/var/www/html
       - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
-      - ./docker/allow-rest-api.php:/var/www/html/wp-content/mu-plugins/allow-rest-api.php:ro
+      - ./docker/checkout-settings.php:/var/www/html/checkout-settings.php:ro
+      - ./wordpress/eva-terminal-gateway:/var/www/html/wp-content/plugins/eva-terminal-gateway:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/wp-admin/install.php"]
       interval: 10s
@@ -59,7 +60,6 @@ services:
 
   wpcli:
     image: wordpress:cli
-    container_name: woo-cli
     depends_on:
       wordpress:
         condition: service_healthy
@@ -69,9 +69,13 @@ services:
       WORDPRESS_DB_USER: wordpress
       WORDPRESS_DB_PASSWORD: wordpress
       WORDPRESS_DB_NAME: wordpress
+      WOO_HTTP_PORT: ${WOO_HTTP_PORT:-8080}
+      EVA_TERMINAL_BRIDGE_KEY: ${EVA_BRIDGE_KEY:?Set EVA_BRIDGE_KEY}
     volumes:
       - wp_data:/var/www/html
       - ./docker/setup.sh:/setup.sh:ro
+      - ./docker/checkout-settings.php:/var/www/html/checkout-settings.php:ro
+      - ./wordpress/eva-terminal-gateway:/var/www/html/wp-content/plugins/eva-terminal-gateway:ro
       - ./docker/seed-products.php:/var/www/html/seed-products.php:ro
     entrypoint: ["/bin/sh", "/setup.sh"]
     networks:

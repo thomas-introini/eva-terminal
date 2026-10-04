@@ -2,32 +2,16 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/thomas/eva-terminal-go/internal/woo"
 )
-
-// ShippingConfig holds the shipping calculation settings.
-// Since we only ship to Italy with simple flat rate / free shipping threshold.
-type ShippingConfig struct {
-	FlatRateCost    float64 // e.g., 5.00
-	FreeShippingMin float64 // e.g., 50.00 (free if subtotal >= this)
-}
-
-// DefaultShippingConfig returns the default shipping configuration.
-func DefaultShippingConfig() ShippingConfig {
-	return ShippingConfig{
-		FlatRateCost:    5.00,
-		FreeShippingMin: 50.00,
-	}
-}
 
 // LocalCart manages cart state locally per SSH session.
 type LocalCart struct {
 	// Items in the cart
 	Items []LocalCartItem
-
-	// Shipping configuration
-	ShippingConfig ShippingConfig
 
 	// UI state
 	SelectedIdx int
@@ -37,8 +21,8 @@ type LocalCart struct {
 type LocalCartItem struct {
 	ProductID   int
 	VariationID int
-	Name        string            // Display name
-	Price       float64           // Unit price
+	Name        string // Display name
+	PriceMinor  int64  // Cached unit price in minor units; Woo computes all totals
 	Quantity    int
 	GrindSize   string            // Selected grind size (e.g., "Fine", "Whole Beans")
 	Meta        map[string]string // Additional metadata
@@ -47,9 +31,8 @@ type LocalCartItem struct {
 // NewLocalCart creates a new empty local cart.
 func NewLocalCart() *LocalCart {
 	return &LocalCart{
-		Items:          make([]LocalCartItem, 0),
-		ShippingConfig: DefaultShippingConfig(),
-		SelectedIdx:    0,
+		Items:       make([]LocalCartItem, 0),
+		SelectedIdx: 0,
 	}
 }
 
@@ -155,70 +138,6 @@ func (c *LocalCart) MoveDown() {
 }
 
 // ============================================
-// Price Calculations
-// ============================================
-
-// Subtotal returns the cart subtotal (sum of line totals).
-func (c *LocalCart) Subtotal() float64 {
-	var total float64
-	for _, item := range c.Items {
-		total += item.Price * float64(item.Quantity)
-	}
-	return total
-}
-
-// CalculateShipping returns the shipping cost based on config.
-// Returns 0 if subtotal >= free shipping threshold.
-func (c *LocalCart) CalculateShipping() float64 {
-	if c.IsEmpty() {
-		return 0
-	}
-	subtotal := c.Subtotal()
-	if subtotal >= c.ShippingConfig.FreeShippingMin {
-		return 0
-	}
-	return c.ShippingConfig.FlatRateCost
-}
-
-// CalculateTotal returns the cart total (subtotal + shipping).
-func (c *LocalCart) CalculateTotal() float64 {
-	return c.Subtotal() + c.CalculateShipping()
-}
-
-// QualifiesForFreeShipping returns true if free shipping applies.
-func (c *LocalCart) QualifiesForFreeShipping() bool {
-	return c.Subtotal() >= c.ShippingConfig.FreeShippingMin
-}
-
-// AmountUntilFreeShipping returns how much more is needed for free shipping.
-func (c *LocalCart) AmountUntilFreeShipping() float64 {
-	remaining := c.ShippingConfig.FreeShippingMin - c.Subtotal()
-	if remaining < 0 {
-		return 0
-	}
-	return remaining
-}
-
-// GetSubtotal returns the formatted subtotal string.
-func (c *LocalCart) GetSubtotal() string {
-	return fmt.Sprintf("$%.2f", c.Subtotal())
-}
-
-// GetTotal returns the formatted total string.
-func (c *LocalCart) GetTotal() string {
-	return fmt.Sprintf("$%.2f", c.CalculateTotal())
-}
-
-// GetShippingFormatted returns the formatted shipping cost string.
-func (c *LocalCart) GetShippingFormatted() string {
-	shipping := c.CalculateShipping()
-	if shipping == 0 {
-		return "FREE"
-	}
-	return fmt.Sprintf("$%.2f", shipping)
-}
-
-// ============================================
 // Display Methods
 // ============================================
 
@@ -231,17 +150,6 @@ func (item *LocalCartItem) GetDisplayName() string {
 	return name
 }
 
-// GetFormattedPrice returns formatted unit price.
-func (item *LocalCartItem) GetFormattedPrice() string {
-	return fmt.Sprintf("$%.2f", item.Price)
-}
-
-// GetFormattedTotal returns formatted line total.
-func (item *LocalCartItem) GetFormattedTotal() string {
-	return fmt.Sprintf("$%.2f", item.Price*float64(item.Quantity))
-}
-
-// ============================================
 // Factory Methods
 // ============================================
 
@@ -254,6 +162,10 @@ func NewLocalCartItemFromProduct(product *woo.Product, variation *woo.Variation,
 		Meta:      make(map[string]string),
 	}
 
+	unit := product.CurrencyMinorUnit
+	if product.CurrencyCode == "" {
+		unit = 2
+	}
 	if variation != nil {
 		item.VariationID = variation.ID
 		// Build display name with variant info
@@ -263,18 +175,26 @@ func NewLocalCartItemFromProduct(product *woo.Product, variation *woo.Variation,
 		} else {
 			item.Name = product.Name
 		}
-		item.Price = parsePrice(variation.GetDisplayPrice())
+		item.PriceMinor = decimalMinor(variation.GetDisplayPrice(), unit)
 	} else {
 		item.Name = product.Name
-		item.Price = parsePrice(product.GetDisplayPrice())
+		item.PriceMinor = decimalMinor(product.Price, unit)
 	}
 
 	return item
 }
 
-// parsePrice converts a price string to float64.
-func parsePrice(priceStr string) float64 {
-	var price float64
-	fmt.Sscanf(priceStr, "%f", &price)
-	return price
+// decimalMinor parses cached display prices without floating point arithmetic.
+func decimalMinor(price string, unit int) int64 {
+	if unit < 0 || unit > 6 {
+		return 0
+	}
+	parts := strings.SplitN(price, ".", 2)
+	fraction := ""
+	if len(parts) > 1 {
+		fraction = parts[1]
+	}
+	fraction += strings.Repeat("0", unit)
+	n, _ := strconv.ParseInt(parts[0]+fraction[:unit], 10, 64)
+	return n
 }

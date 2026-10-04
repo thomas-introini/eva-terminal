@@ -1,6 +1,6 @@
 .PHONY: dev test fmt lint build clean mockwoo woossh docker-up docker-down docker-logs docker-seed dev-docker
 
-include .env
+-include .env
 export
 
 # Default target
@@ -17,9 +17,9 @@ dev:
 	@echo "Connect with: ssh -p 23234 localhost"
 	@echo ""
 	@trap 'kill 0' EXIT; \
-	SSH_AUTH_MODE=public WOO_BASE_URL=http://127.0.0.1:18080 go run ./cmd/mockwoo & \
+	EVA_BRIDGE_KEY=eva-local-mock-development-key-32-characters SSH_AUTH_MODE=public WOO_BASE_URL=http://127.0.0.1:18080 go run ./cmd/mockwoo & \
 	sleep 1 && \
-	SSH_AUTH_MODE=public WOO_BASE_URL=http://127.0.0.1:18080 go run ./cmd/woossh
+	CHECKOUT_ENABLED=true EVA_BRIDGE_KEY=eva-local-mock-development-key-32-characters SSH_AUTH_MODE=public WOO_BASE_URL=http://127.0.0.1:18080 go run ./cmd/woossh
 
 # Run only the mock WooCommerce server
 mockwoo:
@@ -102,7 +102,7 @@ dev-docker:
 	@echo ""
 	@echo "Connect with: ssh -p 23234 localhost"
 	@echo ""
-	SSH_AUTH_MODE=public WOO_BASE_URL=http://localhost:8080 go run ./cmd/woossh
+	SSH_AUTH_MODE=public WOO_BASE_URL=http://localhost:$${WOO_HTTP_PORT:-8080} go run ./cmd/woossh
 
 # Help
 help:
@@ -131,6 +131,19 @@ help:
 	@echo "    make build         - Build binaries to bin/"
 	@echo "    make clean         - Remove build artifacts"
 	@echo "    make hostkey       - Generate SSH host key"
+.PHONY: gateway-build gateway-check gateway-integration
 
+gateway-build:
+	sh wordpress/eva-terminal-gateway/build.sh
 
+gateway-check:
+	find wordpress/eva-terminal-gateway/includes -name '*.php' -exec php -l {} \;
+	php -l wordpress/eva-terminal-gateway/eva-terminal-gateway.php
+	php wordpress/eva-terminal-gateway/tests/sdk.php
 
+gateway-integration: gateway-build
+	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml up --wait -d wordpress
+	@echo "Preparing the isolated test store..."
+	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml run --rm --no-deps wpcli
+	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters python3 wordpress/eva-terminal-gateway/tests/integration.py
+	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml run --rm --no-deps --entrypoint wp wpcli eval-file /var/www/html/wp-content/plugins/eva-terminal-gateway/tests/orders.php

@@ -3,29 +3,36 @@ package woo
 
 // Product represents a WooCommerce product (simple or variable).
 type Product struct {
-	ID             int         `json:"id"`
-	Name           string      `json:"name"`
-	Type           string      `json:"type"` // "simple" or "variable"
-	Status         string      `json:"status"`
-	Description    string      `json:"description"`
-	ShortDescription string    `json:"short_description"`
-	Price          string      `json:"price"`
-	RegularPrice   string      `json:"regular_price"`
-	SalePrice      string      `json:"sale_price"`
-	StockStatus    string      `json:"stock_status"` // "instock", "outofstock", "onbackorder"
-	StockQuantity  *int        `json:"stock_quantity"`
-	Attributes     []Attribute `json:"attributes"`
-	Variations     []int       `json:"variations"` // IDs of variations for variable products
+	ID                int         `json:"id"`
+	Name              string      `json:"name"`
+	Type              string      `json:"type"` // "simple" or "variable"
+	Status            string      `json:"status"`
+	Description       string      `json:"description"`
+	ShortDescription  string      `json:"short_description"`
+	Price             string      `json:"price"`
+	RegularPrice      string      `json:"regular_price"`
+	SalePrice         string      `json:"sale_price"`
+	OnSale            bool        `json:"on_sale"`
+	StockStatus       string      `json:"stock_status"` // "instock", "outofstock", "onbackorder"
+	StockQuantity     *int        `json:"stock_quantity"`
+	Attributes        []Attribute `json:"attributes"`
+	Variations        []int       `json:"variations"` // IDs of variations for variable products
+	VariationDetails  []Variation `json:"-"`          // Store API parent attribute metadata
+	CurrencyCode      string      `json:"currency_code,omitempty"`
+	CurrencyMinorUnit int         `json:"-"`
+	PriceRange        string      `json:"-"`
+	Purchasable       *bool       `json:"-"`
 }
 
 // Variation represents a product variation (e.g., 250g or 1kg version).
 type Variation struct {
-	ID            int                 `json:"id"`
-	Price         string              `json:"price"`
-	RegularPrice  string              `json:"regular_price"`
-	SalePrice     string              `json:"sale_price"`
-	StockStatus   string              `json:"stock_status"`
-	StockQuantity *int                `json:"stock_quantity"`
+	Purchasable   *bool                `json:"-"`
+	ID            int                  `json:"id"`
+	Price         string               `json:"price"`
+	RegularPrice  string               `json:"regular_price"`
+	SalePrice     string               `json:"sale_price"`
+	StockStatus   string               `json:"stock_status"`
+	StockQuantity *int                 `json:"stock_quantity"`
 	Attributes    []VariationAttribute `json:"attributes"`
 }
 
@@ -58,8 +65,8 @@ func (p *Product) IsVariable() bool {
 
 // GetDisplayPrice returns the price to display (sale price if available).
 func (p *Product) GetDisplayPrice() string {
-	if p.SalePrice != "" {
-		return p.SalePrice
+	if p.IsVariable() && p.PriceRange != "" {
+		return p.PriceRange
 	}
 	if p.Price != "" {
 		return p.Price
@@ -84,9 +91,6 @@ func (v *Variation) IsInStock() bool {
 
 // GetDisplayPrice returns the price to display for a variation.
 func (v *Variation) GetDisplayPrice() string {
-	if v.SalePrice != "" {
-		return v.SalePrice
-	}
 	if v.Price != "" {
 		return v.Price
 	}
@@ -109,13 +113,13 @@ func (v *Variation) GetAttributeValue(name string) string {
 
 // OrderRequest represents the data needed to create a WooCommerce order.
 type OrderRequest struct {
-	PaymentMethod      string           `json:"payment_method"`
-	PaymentMethodTitle string           `json:"payment_method_title"`
-	SetPaid            bool             `json:"set_paid"`
-	Billing            BillingAddress   `json:"billing"`
-	Shipping           *BillingAddress  `json:"shipping,omitempty"`
-	LineItems          []OrderLineItem  `json:"line_items"`
-	ShippingLines      []ShippingLine   `json:"shipping_lines,omitempty"`
+	PaymentMethod      string          `json:"payment_method"`
+	PaymentMethodTitle string          `json:"payment_method_title"`
+	SetPaid            bool            `json:"set_paid"`
+	Billing            BillingAddress  `json:"billing"`
+	Shipping           *BillingAddress `json:"shipping,omitempty"`
+	LineItems          []OrderLineItem `json:"line_items"`
+	ShippingLines      []ShippingLine  `json:"shipping_lines,omitempty"`
 }
 
 // ShippingLine represents a shipping line in an order.

@@ -1,38 +1,16 @@
 # WooCommerce Coffee Browser (SSH TUI)
 
-A terminal-based WooCommerce product browser accessible via SSH. Built with Go using the Charm stack (Wish, Bubble Tea, Bubbles, Lip Gloss, Huh).
+A terminal-based WooCommerce product browser accessible via SSH. Built with Go using the Charm v2 stack (Wish, Bubble Tea, Bubbles, Lip Gloss, Huh).
+
+Requires Go 1.26.8 or newer; `go.mod` selects Go 1.27.1 as the preferred toolchain. Charm SSH uses the canonical `charm.land/ssh` module.
+
+The `.env` file is optional. Build and validation commands work from a fresh checkout using defaults or exported environment variables.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      SSH Client                              │
-│                   ssh -p 23234 localhost                     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    Wish SSH Server                           │
-│  ┌─────────────────┐  ┌──────────────────────────────────┐  │
-│  │  Auth Handler   │  │      Bubble Tea Middleware       │  │
-│  │  (allowlist/    │  │  ┌────────┐ ┌─────────┐ ┌─────┐ │  │
-│  │   public mode)  │  │  │ List   │→│ Details │→│ Cfg │ │  │
-│  └─────────────────┘  │  └────────┘ └─────────┘ └─────┘ │  │
-│                       └──────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Data Layer                              │
-│  ┌─────────────────┐         ┌───────────────────────────┐  │
-│  │   TTL Cache     │ ──────→ │   WooCommerce REST API    │  │
-│  │ (products,      │         │   /wp-json/wc/v3/...      │  │
-│  │  variations)    │         └───────────────────────────┘  │
-│  └─────────────────┘                                        │
-└─────────────────────────────────────────────────────────────┘
-```
+The terminal browses a complete local catalog snapshot and keeps one durable WooCommerce guest cart per verified SSH key. Quantity updates synchronize in the background; Woo calculates checkout totals and manages stock/orders. Final card or wallet payment opens Stripe hosted Checkout. A custom Woo gateway journals attempts and recovers payments through signed webhooks and terminal polling.
 
-The SSH server (Wish) handles authentication and spawns a Bubble Tea TUI session for each connection. The TUI fetches products from WooCommerce (or the mock server) with an in-memory TTL cache to reduce API calls.
+See [setup, recovery and rollout checklist](docs/terminal-checkout.md). Build the gateway with `make gateway-build`; the Go server needs only its bridge key, never Stripe credentials.
 
 ## Quick Start (Development)
 
@@ -55,6 +33,13 @@ make dev
 ### Option B: Docker WooCommerce (Realistic)
 
 ```bash
+# Build the gateway SDK (requires PHP 8.2+, Composer and ZIP)
+make gateway-build
+
+# Copy the environment template and set EVA_BRIDGE_KEY to a random value
+cp .env.example .env
+# Generate a key with: openssl rand -hex 32
+
 # Start WordPress + WooCommerce + MySQL
 make docker-up
 
@@ -64,6 +49,8 @@ make docker-logs
 # Once ready, start SSH server
 make dev-docker
 ```
+
+Configure the gateway's Stripe test credentials in WooCommerce and set `CHECKOUT_ENABLED=true` in `.env` to enable checkout. The [rollout checklist](docs/terminal-checkout.md) describes webhook and staging setup. `make gateway-integration` runs a separate store with simulated Stripe responses.
 
 ### Connect
 
@@ -95,7 +82,7 @@ The Docker stack includes:
 On first run, the setup script:
 1. Installs WordPress
 2. Installs and activates WooCommerce
-3. Creates REST API keys (displayed in logs)
+3. Activates the terminal gateway and configures shipping and test coupons
 4. Seeds sample coffee products
 
 ```bash
@@ -120,7 +107,14 @@ make docker-seed    # Re-seed products
 | `f` | Toggle "in-stock only" filter |
 | `r` | Refresh product list |
 | `Enter` | Select product / confirm |
-| `c` | Configure (grind/size selection) |
+| `c` (product list/details) | Open cart / configure product |
+| `a` | Add the configured product to cart |
+| `+` / `-` | Adjust selected cart quantity |
+| `c` / `u` (cart) | Apply / remove coupon |
+| `o` (cart) | Start checkout |
+| `Enter` (review) | Confirm Woo's quote |
+| `o` | Open the current payment attempt |
+| `x` (cart/payment) | Cancel a pending payment |
 | `Esc` / `Backspace` | Go back |
 | `q` / `Ctrl+C` | Quit |
 
@@ -153,44 +147,13 @@ export SSH_AUTH_MODE=public
 make woossh
 ```
 
-In public mode, any SSH client can connect without authentication. This is intended **only for local development**.
+In public mode, any SSH public key can connect after the normal SSH proof of possession. This is intended **only for local development**.
 
-## Environment Variables
+## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SSH_ADDR` | `:23234` | SSH server listen address |
-| `SSH_HOSTKEY_PATH` | `./.ssh_host_ed25519_key` | Path to host key (auto-generated if missing) |
-| `SSH_AUTH_MODE` | `allowlist` | Auth mode: `allowlist` or `public` |
-| `SSH_ALLOWLIST_PATH` | `./allowlist_authorized_keys` | Path to authorized keys file |
-| `WOO_BASE_URL` | `http://127.0.0.1:18080` | WooCommerce API base URL |
-| `WOO_CONSUMER_KEY` | _(empty)_ | WooCommerce API consumer key |
-| `WOO_CONSUMER_SECRET` | _(empty)_ | WooCommerce API consumer secret |
-| `CACHE_TTL_SECONDS` | `60` | Cache TTL in seconds |
+Copy `.env.example` to `.env`. Set `WOO_BASE_URL`, `STATE_DIR`, and `EVA_BRIDGE_KEY` (the same value as WordPress's `EVA_TERMINAL_BRIDGE_KEY`). New checkouts default to disabled; use `CHECKOUT_ENABLED=true` after staging validation. `WOO_STORE_PREFIX` defaults to `/wp-json/wc/store/v1`; `CACHE_TTL_SECONDS=60` controls background catalog refresh. Native Store API browsing requires no Woo consumer keys.
 
-## Connecting to a Real WooCommerce Store
-
-1. Generate WooCommerce REST API keys in your store:
-   - WooCommerce → Settings → Advanced → REST API
-   - Create key with Read permissions
-
-2. Configure environment:
-   ```bash
-   export WOO_BASE_URL=https://your-store.com
-   export WOO_CONSUMER_KEY=ck_xxxxx
-   export WOO_CONSUMER_SECRET=cs_xxxxx
-   export SSH_AUTH_MODE=allowlist
-   ```
-
-3. Add your SSH public key to the allowlist:
-   ```bash
-   cat ~/.ssh/id_ed25519.pub >> allowlist_authorized_keys
-   ```
-
-4. Start the server:
-   ```bash
-   make woossh
-   ```
+Add your SSH key to `allowlist_authorized_keys`, then run `make woossh`. Public development mode accepts any public key after SSH verifies possession; cart identity still comes from that key.
 
 ## Project Structure
 
@@ -206,8 +169,12 @@ In public mode, any SSH client can connect without authentication. This is inten
 │   ├── auth/                # SSH key allowlist handling
 │   ├── cache/               # Generic TTL cache
 │   ├── config/              # Environment configuration
+│   ├── storeapi/            # Native Store API and checkout bridge client
+│   ├── storefront/          # Durable catalog and shopper controllers
 │   ├── tui/                 # Bubble Tea UI (model, views, styles)
 │   └── woo/                 # WooCommerce API client
+├── wordpress/eva-terminal-gateway/ # Native Woo gateway and isolated Stripe SDK
+├── docs/terminal-checkout.md # Setup, recovery and release checklist
 ├── testdata/                # Test fixtures
 ├── docker-compose.yml       # Docker WooCommerce stack
 ├── Makefile
@@ -233,9 +200,12 @@ make test           # Run all tests
 make test-coverage  # Run tests with coverage report
 make fmt            # Format code
 make lint           # Run go vet
+make gateway-check  # Check PHP syntax and isolated SDK
+make gateway-integration # Native Woo checkout and simulated Stripe checks
 
 # Build
 make build          # Build binaries
+make gateway-build  # Build dist/eva-terminal-gateway.zip
 make clean          # Clean build artifacts
 ```
 
@@ -245,7 +215,7 @@ make clean          # Clean build artifacts
 - **Variable Products**: Choose size (250g/1kg) and grind size
 - **Search**: Filter products by name
 - **In-Stock Filter**: Show only available products
-- **Caching**: In-memory TTL cache reduces API calls
+- **Catalog snapshots**: Local navigation and search make no API calls
 - **HTML Stripping**: Clean product descriptions
 
 ## Testing
@@ -266,6 +236,4 @@ go test -v ./internal/tui
 ## License
 
 MIT
-
-
 

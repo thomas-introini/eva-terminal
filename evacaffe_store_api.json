@@ -1,0 +1,3893 @@
+{
+  "namespace": "wc/store",
+  "routes": {
+    "/wc/store": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "args": {
+            "namespace": {
+              "default": "wc/store",
+              "required": false
+            },
+            "context": {
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store"
+          }
+        ]
+      }
+    },
+    "/wc/store/batch": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "args": {
+            "validation": {
+              "type": "string",
+              "enum": [
+                "require-all-validate",
+                "normal"
+              ],
+              "default": "normal",
+              "required": false
+            },
+            "requests": {
+              "type": "array",
+              "maxItems": 25,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "POST",
+                      "PUT",
+                      "PATCH",
+                      "DELETE"
+                    ],
+                    "default": "POST"
+                  },
+                  "path": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "body": {
+                    "type": "object",
+                    "properties": [],
+                    "additionalProperties": true
+                  },
+                  "headers": {
+                    "type": "object",
+                    "properties": [],
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "array"
+                      ],
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              "required": true
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/batch"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/add-item": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "id": {
+              "description": "Prodotto dell'elemento del carrello o ID della variante.",
+              "type": "integer",
+              "required": false
+            },
+            "quantity": {
+              "description": "Quantità di questo elemento da aggiungere al carrello.",
+              "type": "number",
+              "required": false
+            },
+            "variation": {
+              "description": "Attributi scelti (per le varianti).",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "attribute": {
+                    "description": "Nome attributo variante.",
+                    "type": "string",
+                    "context": [
+                      "view",
+                      "edit"
+                    ]
+                  },
+                  "value": {
+                    "description": "Valore attributo variante.",
+                    "type": "string",
+                    "context": [
+                      "view",
+                      "edit"
+                    ]
+                  }
+                }
+              },
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/add-item"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/apply-coupon": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "code": {
+              "description": "Identificatore univoco per il codice promozionale nel carrello.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/apply-coupon"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/coupons": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "code": {
+              "description": "Il codice univoco del codice promozionale.",
+              "type": "string",
+              "required": false
+            },
+            "discount_type": {
+              "description": "Il tipo di sconto per il codice promozionale (ad esempio la percentuale o l'importo fisso)",
+              "type": "string",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": []
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/coupons"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/coupons/(?P<code>[\\w-]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "code": {
+              "description": "Identificatore univoco per il codice promozionale nel carrello.",
+              "type": "string",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "code": {
+              "description": "Identificatore univoco per il codice promozionale nel carrello.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/cart/extensions": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "namespace": {
+              "description": "Nome dell'estensione: sarà utilizzato per garantire che i dati della richiesta siano trasferiti correttamente.",
+              "type": "string",
+              "required": false
+            },
+            "data": {
+              "description": "Ulteriori dati da passare all'estensione",
+              "type": "object",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/extensions"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/items": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "extensions": {
+              "type": "object",
+              "properties": [],
+              "default": [],
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": []
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/items"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/items/(?P<key>[\\w-]{32})": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "key": {
+              "description": "Identificatore univoco per l'elemento nel carrello.",
+              "type": "string",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "POST",
+            "PUT",
+            "PATCH"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "key": {
+              "description": "Identificatore univoco per l'elemento nel carrello.",
+              "type": "string",
+              "required": false
+            },
+            "extensions": {
+              "type": "object",
+              "properties": [],
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "DELETE"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "key": {
+              "description": "Identificatore univoco per l'elemento nel carrello.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/cart/remove-coupon": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "code": {
+              "description": "Identificatore univoco per il codice promozionale nel carrello.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/remove-coupon"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/remove-item": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "key": {
+              "description": "Identificatore univoco (chiave) per l'articolo del carrello.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/remove-item"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/select-shipping-rate": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "package_id": {
+              "description": "L'ID del pacchetto da spedire. Lascia il campo vuoto per applicare a tutti i pacchetti.",
+              "type": [
+                "integer",
+                "string",
+                "null"
+              ],
+              "required": false
+            },
+            "rate_id": {
+              "description": "L'ID della tariffa scelta per il pacchetto.",
+              "type": "string",
+              "required": true
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/select-shipping-rate"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/update-item": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "key": {
+              "description": "Identificatore univoco (chiave) per l'articolo del carrello da aggiornare.",
+              "type": "string",
+              "required": false
+            },
+            "quantity": {
+              "description": "Nuova quantità di articoli nel carrello.",
+              "type": "number",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/update-item"
+          }
+        ]
+      }
+    },
+    "/wc/store/cart/update-customer": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "billing_address": {
+              "description": "Indirizzo di fatturazione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "email": {
+                  "description": "Email",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            },
+            "shipping_address": {
+              "description": "Indirizzo di spedizione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/cart/update-customer"
+          }
+        ]
+      }
+    },
+    "/wc/store/checkout": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET",
+        "POST",
+        "POST",
+        "PUT",
+        "PATCH"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "payment_data": {
+              "description": "Dati per trasferire il metodo di pagamento durante l'elaborazione del pagamento.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": [
+                      "string",
+                      "boolean"
+                    ]
+                  }
+                }
+              },
+              "required": false
+            },
+            "customer_password": {
+              "description": "Password cliente per i nuovi account, se applicabile.",
+              "type": "string",
+              "required": false
+            },
+            "customer_note": {
+              "description": "Nota aggiunta all'ordine dal cliente durante il pagamento.",
+              "type": "string",
+              "required": false
+            },
+            "billing_address": {
+              "description": "Indirizzo di fatturazione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "email": {
+                  "description": "Email",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": true
+            },
+            "shipping_address": {
+              "description": "Indirizzo di spedizione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            },
+            "payment_method": {
+              "description": "L'ID del metodo di pagamento da usare per l'elaborazione del pagamento.",
+              "type": "string",
+              "enum": [
+                "",
+                "ppcp-axo-gateway",
+                "stripe",
+                "stripe_us_bank_account",
+                "stripe_alipay",
+                "stripe_amazon_pay",
+                "stripe_blik",
+                "stripe_klarna",
+                "stripe_affirm",
+                "stripe_afterpay_clearpay",
+                "stripe_eps",
+                "stripe_bancontact",
+                "stripe_boleto",
+                "stripe_ideal",
+                "stripe_oxxo",
+                "stripe_sepa_debit",
+                "stripe_p24",
+                "stripe_multibanco",
+                "stripe_link",
+                "stripe_wechat_pay",
+                "stripe_cashapp",
+                "stripe_acss_debit",
+                "stripe_bacs_debit",
+                "stripe_au_becs_debit",
+                "satispay",
+                "ppcp-credit-card-gateway",
+                "ppcp-card-button-gateway",
+                "ppcp-bancontact",
+                "ppcp-blik",
+                "ppcp-eps",
+                "ppcp-ideal",
+                "ppcp-mybank",
+                "ppcp-p24",
+                "ppcp-trustly",
+                "ppcp-multibanco",
+                "ppcp-googlepay",
+                "ppcp-applepay",
+                "ppcp-gateway",
+                "bacs",
+                "cheque",
+                "cod"
+              ],
+              "required": false
+            },
+            "create_account": {
+              "description": "Indica se creare un nuovo account utente come parte dell'elaborazione dell'ordine.",
+              "type": "boolean",
+              "required": false
+            },
+            "additional_fields": {
+              "description": "Campi aggiuntivi da memorizzare nell'ordine.",
+              "type": "object",
+              "properties": {
+                "eva-gift-wrap/gift_wrap": {
+                  "description": "Confezione regalo (+€ 1,50)",
+                  "type": "boolean",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": false
+                }
+              },
+              "required": false
+            },
+            "extensions": {
+              "type": "object",
+              "properties": {
+                "eva": {
+                  "description": "Dati delle estensioni registrati da eva",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "gift_wrap": {
+                      "description": "Whether gift wrap is requested.",
+                      "type": "boolean",
+                      "context": [
+                        "view",
+                        "edit"
+                      ],
+                      "readonly": false,
+                      "default": false
+                    }
+                  }
+                },
+                "ppcp_recaptcha": {
+                  "description": "Dati delle estensioni registrati da ppcp_recaptcha",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "token": {
+                      "description": "reCAPTCHA token",
+                      "type": "string",
+                      "readonly": false
+                    },
+                    "version": {
+                      "description": "reCAPTCHA version",
+                      "type": "string",
+                      "readonly": false
+                    }
+                  }
+                },
+                "woocommerce/order-attribution": {
+                  "description": "Dati delle estensioni registrati da woocommerce/order-attribution",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "source_type": {
+                      "description": "Campo di attribuzione dell'ordine: source_type",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "referrer": {
+                      "description": "Campo di attribuzione dell'ordine: referrer",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_campaign": {
+                      "description": "Campo di attribuzione dell'ordine: utm_campaign",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_medium": {
+                      "description": "Campo di attribuzione dell'ordine: utm_medium",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_content": {
+                      "description": "Campo di attribuzione dell'ordine: utm_content",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_id": {
+                      "description": "Campo di attribuzione dell'ordine: utm_id",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_term": {
+                      "description": "Campo di attribuzione dell'ordine: utm_term",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source_platform": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source_platform",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_creative_format": {
+                      "description": "Campo di attribuzione dell'ordine: utm_creative_format",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_marketing_tactic": {
+                      "description": "Campo di attribuzione dell'ordine: utm_marketing_tactic",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_entry": {
+                      "description": "Campo di attribuzione dell'ordine: session_entry",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_start_time": {
+                      "description": "Campo di attribuzione dell'ordine: session_start_time",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_pages": {
+                      "description": "Campo di attribuzione dell'ordine: session_pages",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_count": {
+                      "description": "Campo di attribuzione dell'ordine: session_count",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "user_agent": {
+                      "description": "Campo di attribuzione dell'ordine: user_agent",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    }
+                  }
+                }
+              },
+              "default": {
+                "eva": [],
+                "ppcp_recaptcha": [],
+                "woocommerce/order-attribution": []
+              },
+              "required": false
+            }
+          }
+        },
+        {
+          "methods": [
+            "POST",
+            "PUT",
+            "PATCH"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "additional_fields": {
+              "description": "Campi aggiuntivi da memorizzare nell'ordine.",
+              "type": "object",
+              "properties": {
+                "eva-gift-wrap/gift_wrap": {
+                  "description": "Confezione regalo (+€ 1,50)",
+                  "type": "boolean",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": false
+                }
+              },
+              "required": false
+            },
+            "payment_method": {
+              "description": "L'ID del metodo di pagamento da usare per l'elaborazione del pagamento.",
+              "type": "string",
+              "enum": [
+                "",
+                "ppcp-axo-gateway",
+                "stripe",
+                "stripe_us_bank_account",
+                "stripe_alipay",
+                "stripe_amazon_pay",
+                "stripe_blik",
+                "stripe_klarna",
+                "stripe_affirm",
+                "stripe_afterpay_clearpay",
+                "stripe_eps",
+                "stripe_bancontact",
+                "stripe_boleto",
+                "stripe_ideal",
+                "stripe_oxxo",
+                "stripe_sepa_debit",
+                "stripe_p24",
+                "stripe_multibanco",
+                "stripe_link",
+                "stripe_wechat_pay",
+                "stripe_cashapp",
+                "stripe_acss_debit",
+                "stripe_bacs_debit",
+                "stripe_au_becs_debit",
+                "satispay",
+                "ppcp-credit-card-gateway",
+                "ppcp-card-button-gateway",
+                "ppcp-bancontact",
+                "ppcp-blik",
+                "ppcp-eps",
+                "ppcp-ideal",
+                "ppcp-mybank",
+                "ppcp-p24",
+                "ppcp-trustly",
+                "ppcp-multibanco",
+                "ppcp-googlepay",
+                "ppcp-applepay",
+                "ppcp-gateway",
+                "bacs",
+                "cheque",
+                "cod"
+              ],
+              "required": false
+            },
+            "order_notes": {
+              "description": "Note ordine.",
+              "type": "string",
+              "required": false
+            },
+            "customer_note": {
+              "description": "Nota aggiunta all'ordine dal cliente durante il pagamento.",
+              "type": "string",
+              "required": false
+            },
+            "billing_address": {
+              "description": "Indirizzo di fatturazione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "email": {
+                  "description": "Email",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            },
+            "shipping_address": {
+              "description": "Indirizzo di spedizione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            },
+            "create_account": {
+              "description": "Indica se creare un nuovo account utente come parte dell'elaborazione dell'ordine.",
+              "type": "boolean",
+              "required": false
+            },
+            "extensions": {
+              "type": "object",
+              "properties": {
+                "eva": {
+                  "description": "Dati delle estensioni registrati da eva",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "gift_wrap": {
+                      "description": "Whether gift wrap is requested.",
+                      "type": "boolean",
+                      "context": [
+                        "view",
+                        "edit"
+                      ],
+                      "readonly": false,
+                      "default": false
+                    }
+                  }
+                },
+                "ppcp_recaptcha": {
+                  "description": "Dati delle estensioni registrati da ppcp_recaptcha",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "token": {
+                      "description": "reCAPTCHA token",
+                      "type": "string",
+                      "readonly": false
+                    },
+                    "version": {
+                      "description": "reCAPTCHA version",
+                      "type": "string",
+                      "readonly": false
+                    }
+                  }
+                },
+                "woocommerce/order-attribution": {
+                  "description": "Dati delle estensioni registrati da woocommerce/order-attribution",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "source_type": {
+                      "description": "Campo di attribuzione dell'ordine: source_type",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "referrer": {
+                      "description": "Campo di attribuzione dell'ordine: referrer",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_campaign": {
+                      "description": "Campo di attribuzione dell'ordine: utm_campaign",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_medium": {
+                      "description": "Campo di attribuzione dell'ordine: utm_medium",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_content": {
+                      "description": "Campo di attribuzione dell'ordine: utm_content",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_id": {
+                      "description": "Campo di attribuzione dell'ordine: utm_id",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_term": {
+                      "description": "Campo di attribuzione dell'ordine: utm_term",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source_platform": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source_platform",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_creative_format": {
+                      "description": "Campo di attribuzione dell'ordine: utm_creative_format",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_marketing_tactic": {
+                      "description": "Campo di attribuzione dell'ordine: utm_marketing_tactic",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_entry": {
+                      "description": "Campo di attribuzione dell'ordine: session_entry",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_start_time": {
+                      "description": "Campo di attribuzione dell'ordine: session_start_time",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_pages": {
+                      "description": "Campo di attribuzione dell'ordine: session_pages",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_count": {
+                      "description": "Campo di attribuzione dell'ordine: session_count",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "user_agent": {
+                      "description": "Campo di attribuzione dell'ordine: user_agent",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    }
+                  }
+                }
+              },
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/checkout"
+          }
+        ]
+      }
+    },
+    "/wc/store/checkout/(?P<id>[\\d]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "POST"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "POST"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "payment_data": {
+              "description": "Dati per trasferire il metodo di pagamento durante l'elaborazione del pagamento.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": [
+                      "string",
+                      "boolean"
+                    ]
+                  }
+                }
+              },
+              "required": false
+            },
+            "customer_note": {
+              "description": "Nota aggiunta all'ordine dal cliente durante il pagamento.",
+              "type": "string",
+              "required": false
+            },
+            "billing_address": {
+              "description": "Indirizzo di fatturazione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "email": {
+                  "description": "Email",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": true
+            },
+            "shipping_address": {
+              "description": "Indirizzo di spedizione.",
+              "type": "object",
+              "properties": {
+                "first_name": {
+                  "description": "Nome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "last_name": {
+                  "description": "Cognome",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "company": {
+                  "description": "Società",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_1": {
+                  "description": "Indirizzo",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "address_2": {
+                  "description": "Appartamento, suite, ecc.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "city": {
+                  "description": "Città",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "state": {
+                  "description": "Codice stato/contea o nome dello stato, della contea, della provincia o del distretto.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "postcode": {
+                  "description": "CAP",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "country": {
+                  "description": "Codice regione/contea in formato ISO 3166-1 alpha-2.",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                },
+                "phone": {
+                  "description": "Telefono",
+                  "type": "string",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": true
+                }
+              },
+              "required": false
+            },
+            "payment_method": {
+              "description": "L'ID del metodo di pagamento da usare per l'elaborazione del pagamento.",
+              "type": "string",
+              "enum": [
+                "",
+                "ppcp-axo-gateway",
+                "stripe",
+                "stripe_us_bank_account",
+                "stripe_alipay",
+                "stripe_amazon_pay",
+                "stripe_blik",
+                "stripe_klarna",
+                "stripe_affirm",
+                "stripe_afterpay_clearpay",
+                "stripe_eps",
+                "stripe_bancontact",
+                "stripe_boleto",
+                "stripe_ideal",
+                "stripe_oxxo",
+                "stripe_sepa_debit",
+                "stripe_p24",
+                "stripe_multibanco",
+                "stripe_link",
+                "stripe_wechat_pay",
+                "stripe_cashapp",
+                "stripe_acss_debit",
+                "stripe_bacs_debit",
+                "stripe_au_becs_debit",
+                "satispay",
+                "ppcp-credit-card-gateway",
+                "ppcp-card-button-gateway",
+                "ppcp-bancontact",
+                "ppcp-blik",
+                "ppcp-eps",
+                "ppcp-ideal",
+                "ppcp-mybank",
+                "ppcp-p24",
+                "ppcp-trustly",
+                "ppcp-multibanco",
+                "ppcp-googlepay",
+                "ppcp-applepay",
+                "ppcp-gateway",
+                "bacs",
+                "cheque",
+                "cod"
+              ],
+              "required": false
+            },
+            "additional_fields": {
+              "description": "Campi aggiuntivi da memorizzare nell'ordine.",
+              "type": "object",
+              "properties": {
+                "eva-gift-wrap/gift_wrap": {
+                  "description": "Confezione regalo (+€ 1,50)",
+                  "type": "boolean",
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "required": false
+                }
+              },
+              "required": false
+            },
+            "extensions": {
+              "type": "object",
+              "properties": {
+                "eva": {
+                  "description": "Dati delle estensioni registrati da eva",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "gift_wrap": {
+                      "description": "Whether gift wrap is requested.",
+                      "type": "boolean",
+                      "context": [
+                        "view",
+                        "edit"
+                      ],
+                      "readonly": false,
+                      "default": false
+                    }
+                  }
+                },
+                "ppcp_recaptcha": {
+                  "description": "Dati delle estensioni registrati da ppcp_recaptcha",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "token": {
+                      "description": "reCAPTCHA token",
+                      "type": "string",
+                      "readonly": false
+                    },
+                    "version": {
+                      "description": "reCAPTCHA version",
+                      "type": "string",
+                      "readonly": false
+                    }
+                  }
+                },
+                "woocommerce/order-attribution": {
+                  "description": "Dati delle estensioni registrati da woocommerce/order-attribution",
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "context": [
+                    "view",
+                    "edit"
+                  ],
+                  "properties": {
+                    "source_type": {
+                      "description": "Campo di attribuzione dell'ordine: source_type",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "referrer": {
+                      "description": "Campo di attribuzione dell'ordine: referrer",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_campaign": {
+                      "description": "Campo di attribuzione dell'ordine: utm_campaign",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_medium": {
+                      "description": "Campo di attribuzione dell'ordine: utm_medium",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_content": {
+                      "description": "Campo di attribuzione dell'ordine: utm_content",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_id": {
+                      "description": "Campo di attribuzione dell'ordine: utm_id",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_term": {
+                      "description": "Campo di attribuzione dell'ordine: utm_term",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_source_platform": {
+                      "description": "Campo di attribuzione dell'ordine: utm_source_platform",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_creative_format": {
+                      "description": "Campo di attribuzione dell'ordine: utm_creative_format",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "utm_marketing_tactic": {
+                      "description": "Campo di attribuzione dell'ordine: utm_marketing_tactic",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_entry": {
+                      "description": "Campo di attribuzione dell'ordine: session_entry",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_start_time": {
+                      "description": "Campo di attribuzione dell'ordine: session_start_time",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_pages": {
+                      "description": "Campo di attribuzione dell'ordine: session_pages",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "session_count": {
+                      "description": "Campo di attribuzione dell'ordine: session_count",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    },
+                    "user_agent": {
+                      "description": "Campo di attribuzione dell'ordine: user_agent",
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "context": []
+                    }
+                  }
+                }
+              },
+              "default": {
+                "eva": [],
+                "ppcp_recaptcha": [],
+                "woocommerce/order-attribution": []
+              },
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/order/(?P<id>[\\d]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/attributes": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/attributes"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/attributes/(?P<id>[\\d]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "id": {
+              "description": "Identificatore univoco per la risorsa.",
+              "type": "integer",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/attributes/(?P<attribute_id>[\\d]+)/terms": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "attribute_id": {
+              "description": "Identificatore univoco per l'attributo.",
+              "type": "integer",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "order": {
+              "description": "Ordine crescente o decrescente.",
+              "type": "string",
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina per proprietà termine.",
+              "type": "string",
+              "default": "name",
+              "enum": [
+                "name",
+                "slug",
+                "count",
+                "menu_order",
+                "name_num",
+                "id"
+              ],
+              "required": false
+            },
+            "hide_empty": {
+              "description": "Se vero, i termini vuoti non verranno restituiti.",
+              "type": "boolean",
+              "default": true,
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati ai termini con uno specifico genitore (solo tassonomie gerarchiche).",
+              "type": "integer",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/categories": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "embed",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "order": {
+              "description": "Ordine crescente o decrescente.",
+              "type": "string",
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina per proprietà termine.",
+              "type": "string",
+              "default": "name",
+              "enum": [
+                "name",
+                "slug",
+                "count"
+              ],
+              "required": false
+            },
+            "hide_empty": {
+              "description": "Se vero, i termini vuoti non verranno restituiti.",
+              "type": "boolean",
+              "default": true,
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati ai termini con uno specifico genitore (solo tassonomie gerarchiche).",
+              "type": "integer",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/categories"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/categories/(?P<id>[\\d]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "id": {
+              "description": "Identificatore univoco per la risorsa.",
+              "type": "integer",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "embed",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/brands": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "embed",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "order": {
+              "description": "Ordine crescente o decrescente.",
+              "type": "string",
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina per proprietà termine.",
+              "type": "string",
+              "default": "name",
+              "enum": [
+                "name",
+                "slug",
+                "count"
+              ],
+              "required": false
+            },
+            "hide_empty": {
+              "description": "Se vero, i termini vuoti non verranno restituiti.",
+              "type": "boolean",
+              "default": true,
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati ai termini con uno specifico genitore (solo tassonomie gerarchiche).",
+              "type": "integer",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/brands"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/brands/(?P<identifier>[\\w-]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "identifier": {
+              "description": "Identificatore univoco per la risorsa.",
+              "type": "string",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "embed",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/collection-data": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "default": 10,
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "slug": {
+              "description": "Limita i risultati ai prodotti con slug specifico/i. Usa le virgole per separare.",
+              "type": "string",
+              "required": false
+            },
+            "after": {
+              "description": "Limita la risposta alle risorse create dopo una determinata data conforme al formato ISO8601.",
+              "type": "string",
+              "format": "date-time",
+              "required": false
+            },
+            "before": {
+              "description": "Risposta del limite per le risorse create prima di una determinata data conforme a ISO8601.",
+              "type": "string",
+              "format": "date-time",
+              "required": false
+            },
+            "date_column": {
+              "description": "Se si limita la risposta utilizzando, prima/dopo, la colonna della data da confrontare.",
+              "type": "string",
+              "default": "date",
+              "enum": [
+                "date",
+                "date_gmt",
+                "modified",
+                "modified_gmt"
+              ],
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "offset": {
+              "description": "Compensa i risultati per un numero specifico di prodotti.",
+              "type": "integer",
+              "required": false
+            },
+            "order": {
+              "description": "Ordina gli attributi in modo crescente o decrescente.",
+              "type": "string",
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina la collezione per attributo dell'oggetto.",
+              "type": "string",
+              "default": "date",
+              "enum": [
+                "date",
+                "modified",
+                "id",
+                "include",
+                "title",
+                "slug",
+                "price",
+                "popularity",
+                "rating",
+                "menu_order",
+                "comment_count"
+              ],
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati a quelli con degli specifici ID genitore.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "parent_exclude": {
+              "description": "Limita i risultati a tutti i prodotti eccetto quelli con uno specifico ID genitore.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "type": {
+              "description": "Limita i risultati ai prodotti di un tipo specifico.",
+              "type": "string",
+              "enum": [
+                "simple",
+                "grouped",
+                "external",
+                "variable",
+                "variation"
+              ],
+              "required": false
+            },
+            "sku": {
+              "description": "Limita i risultati ai prodotti con COD specifici. Utilizza le virgole per separare.",
+              "type": "string",
+              "required": false
+            },
+            "featured": {
+              "description": "Restringi il risultato ai prodotti in evidenza.",
+              "type": "boolean",
+              "required": false
+            },
+            "category": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID della categoria, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "category_operator": {
+              "description": "Operatore per confrontare i termini di categoria del prodotto.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "brand": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID del marchio, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "brand_operator": {
+              "description": "Operatore per confrontare i termini del marchio del prodotto.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "tag": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID dei tag, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "tag_operator": {
+              "description": "Operatore per confrontare i tag dei prodotti.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "on_sale": {
+              "description": "Restringi il risultato ai prodotti in offerta.",
+              "type": "boolean",
+              "required": false
+            },
+            "min_price": {
+              "description": "Limita l'insieme dei risultati basati su un prezzo minimo, fornito usando l'unità più piccola della valuta.",
+              "type": "string",
+              "required": false
+            },
+            "max_price": {
+              "description": "Limita l'insieme dei risultati basati su un prezzo massimo, fornito usando l'unità più piccola della valuta.",
+              "type": "string",
+              "required": false
+            },
+            "stock_status": {
+              "description": "Limite del risultato impostato sui prodotti con stato della disponibilità specifico.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "instock",
+                  "outofstock",
+                  "onbackorder"
+                ],
+                "sanitize_callback": "sanitize_text_field",
+                "validate_callback": "rest_validate_request_arg"
+              },
+              "default": [],
+              "required": false
+            },
+            "attributes": {
+              "description": "Risultato del limite impostato sui prodotti con attributi globali selezionati.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "attribute": {
+                    "description": "Nome tassonomia attributo.",
+                    "type": "string",
+                    "sanitize_callback": "wc_sanitize_taxonomy_name"
+                  },
+                  "term_id": {
+                    "description": "Elenco di ID del termine dell'attributo.",
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "sanitize_callback": "wp_parse_id_list"
+                  },
+                  "slug": {
+                    "description": "Elenco degli slug degli attributi. Se viene fornito un ID del termine, questo verrà ignorato.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "sanitize_callback": "wp_parse_slug_list"
+                  },
+                  "operator": {
+                    "description": "Operatore per confrontare i termini dell’attributo del prodotto.",
+                    "type": "string",
+                    "enum": [
+                      "in",
+                      "not_in",
+                      "and"
+                    ]
+                  }
+                }
+              },
+              "default": [],
+              "required": false
+            },
+            "attribute_relation": {
+              "description": "Relazione logica tra gli attributi quando ne vengono filtrati più contemporaneamente.",
+              "type": "string",
+              "enum": [
+                "in",
+                "and"
+              ],
+              "default": "and",
+              "required": false
+            },
+            "catalog_visibility": {
+              "description": "Determina se vengono visualizzati i prodotti nascosti o visibili del catalogo.",
+              "type": "string",
+              "enum": [
+                "any",
+                "visible",
+                "catalog",
+                "search",
+                "hidden"
+              ],
+              "required": false
+            },
+            "rating": {
+              "description": "Risultato del limite impostato su prodotti con una determinata media delle valutazioni.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ]
+              },
+              "default": [],
+              "required": false
+            },
+            "calculate_price_range": {
+              "description": "Se vero, calcola il prezzo minimo e quello massimo del prodotto per la raccolta.",
+              "type": "boolean",
+              "default": false,
+              "required": false
+            },
+            "calculate_stock_status_counts": {
+              "description": "Se vero, calcola i conteggi del magazzino per i prodotti nella raccolta.",
+              "type": "boolean",
+              "default": false,
+              "required": false
+            },
+            "calculate_attribute_counts": {
+              "description": "Se richiesto, calcola i conteggi del termine dell'attributo per prodotti nella raccolta.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "taxonomy": {
+                    "description": "Nome tassonomia.",
+                    "type": "string",
+                    "context": [
+                      "view",
+                      "edit"
+                    ],
+                    "readonly": true
+                  },
+                  "query_type": {
+                    "description": "La condizione filtro\t in esecuzione che può influire sui conteggi. Valori validi che includono \"and\" e \"or\".",
+                    "type": "string",
+                    "enum": [
+                      "and",
+                      "or"
+                    ],
+                    "context": [
+                      "view",
+                      "edit"
+                    ],
+                    "readonly": true
+                  }
+                }
+              },
+              "default": [],
+              "required": false
+            },
+            "calculate_rating_counts": {
+              "description": "Se vero, calcola i conteggi della valutazione per prodotti nella raccolta.",
+              "type": "boolean",
+              "default": false,
+              "required": false
+            },
+            "calculate_taxonomy_counts": {
+              "description": "Se richiesto, calcola i conteggi del termine della tassonomia per i prodotti nella raccolta.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "description": "Nome tassonomia."
+              },
+              "default": [],
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/collection-data"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/reviews": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "default": 10,
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "offset": {
+              "description": "Compensa i risultati per un numero specifico di prodotti.",
+              "type": "integer",
+              "required": false
+            },
+            "order": {
+              "description": "Ordina gli attributi in modo crescente o decrescente.",
+              "type": "string",
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina la collezione per attributo dell'oggetto.",
+              "type": "string",
+              "default": "date",
+              "enum": [
+                "date",
+                "date_gmt",
+                "id",
+                "rating",
+                "product"
+              ],
+              "required": false
+            },
+            "category_id": {
+              "description": "Limita l'insieme dei risultati alle recensioni da ID di categoria specifici.",
+              "type": "string",
+              "required": false
+            },
+            "product_id": {
+              "description": "Limita l'insieme dei risultati alle recensioni da ID di prodotto specifici.",
+              "type": "string",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/reviews"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/tags": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "order": {
+              "description": "Ordine crescente o decrescente.",
+              "type": "string",
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina per proprietà termine.",
+              "type": "string",
+              "default": "name",
+              "enum": [
+                "name",
+                "slug",
+                "count"
+              ],
+              "required": false
+            },
+            "hide_empty": {
+              "description": "Se vero, i termini vuoti non verranno restituiti.",
+              "type": "boolean",
+              "default": true,
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati ai termini con uno specifico genitore (solo tassonomie gerarchiche).",
+              "type": "integer",
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products/tags"
+          }
+        ]
+      }
+    },
+    "/wc/store/products": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            },
+            "page": {
+              "description": "Pagina corrente della collezione.",
+              "type": "integer",
+              "default": 1,
+              "minimum": 1,
+              "required": false
+            },
+            "per_page": {
+              "description": "Numero massimo di articoli da restituire nell'insieme dei risultati. Impostazione predefinita su nessun limite se lasciato vuoto.",
+              "type": "integer",
+              "default": 10,
+              "minimum": 0,
+              "maximum": 100,
+              "required": false
+            },
+            "search": {
+              "description": "Limita i risultati a quelli che corrispondono a una stringa.",
+              "type": "string",
+              "required": false
+            },
+            "slug": {
+              "description": "Limita i risultati ai prodotti con slug specifico/i. Usa le virgole per separare.",
+              "type": "string",
+              "required": false
+            },
+            "after": {
+              "description": "Limita la risposta alle risorse create dopo una determinata data conforme al formato ISO8601.",
+              "type": "string",
+              "format": "date-time",
+              "required": false
+            },
+            "before": {
+              "description": "Risposta del limite per le risorse create prima di una determinata data conforme a ISO8601.",
+              "type": "string",
+              "format": "date-time",
+              "required": false
+            },
+            "date_column": {
+              "description": "Se si limita la risposta utilizzando, prima/dopo, la colonna della data da confrontare.",
+              "type": "string",
+              "default": "date",
+              "enum": [
+                "date",
+                "date_gmt",
+                "modified",
+                "modified_gmt"
+              ],
+              "required": false
+            },
+            "exclude": {
+              "description": "Assicura che i risultati escludano ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "include": {
+              "description": "Limita i risultati ad ID specifici.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "offset": {
+              "description": "Compensa i risultati per un numero specifico di prodotti.",
+              "type": "integer",
+              "required": false
+            },
+            "order": {
+              "description": "Ordina gli attributi in modo crescente o decrescente.",
+              "type": "string",
+              "default": "desc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "required": false
+            },
+            "orderby": {
+              "description": "Ordina la collezione per attributo dell'oggetto.",
+              "type": "string",
+              "default": "date",
+              "enum": [
+                "date",
+                "modified",
+                "id",
+                "include",
+                "title",
+                "slug",
+                "price",
+                "popularity",
+                "rating",
+                "menu_order",
+                "comment_count"
+              ],
+              "required": false
+            },
+            "parent": {
+              "description": "Limita i risultati a quelli con degli specifici ID genitore.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "parent_exclude": {
+              "description": "Limita i risultati a tutti i prodotti eccetto quelli con uno specifico ID genitore.",
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "default": [],
+              "required": false
+            },
+            "type": {
+              "description": "Limita i risultati ai prodotti di un tipo specifico.",
+              "type": "string",
+              "enum": [
+                "simple",
+                "grouped",
+                "external",
+                "variable",
+                "variation"
+              ],
+              "required": false
+            },
+            "sku": {
+              "description": "Limita i risultati ai prodotti con COD specifici. Utilizza le virgole per separare.",
+              "type": "string",
+              "required": false
+            },
+            "featured": {
+              "description": "Restringi il risultato ai prodotti in evidenza.",
+              "type": "boolean",
+              "required": false
+            },
+            "category": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID della categoria, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "category_operator": {
+              "description": "Operatore per confrontare i termini di categoria del prodotto.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "brand": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID del marchio, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "brand_operator": {
+              "description": "Operatore per confrontare i termini del marchio del prodotto.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "tag": {
+              "description": "Limita il set di risultati ai prodotti a cui è stato assegnato un insieme di slug o ID dei tag, separati da virgole.",
+              "type": "string",
+              "required": false
+            },
+            "tag_operator": {
+              "description": "Operatore per confrontare i tag dei prodotti.",
+              "type": "string",
+              "enum": [
+                "in",
+                "not_in",
+                "and"
+              ],
+              "default": "in",
+              "required": false
+            },
+            "on_sale": {
+              "description": "Restringi il risultato ai prodotti in offerta.",
+              "type": "boolean",
+              "required": false
+            },
+            "min_price": {
+              "description": "Limita l'insieme dei risultati basati su un prezzo minimo, fornito usando l'unità più piccola della valuta.",
+              "type": "string",
+              "required": false
+            },
+            "max_price": {
+              "description": "Limita l'insieme dei risultati basati su un prezzo massimo, fornito usando l'unità più piccola della valuta.",
+              "type": "string",
+              "required": false
+            },
+            "stock_status": {
+              "description": "Limite del risultato impostato sui prodotti con stato della disponibilità specifico.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "instock",
+                  "outofstock",
+                  "onbackorder"
+                ],
+                "sanitize_callback": "sanitize_text_field",
+                "validate_callback": "rest_validate_request_arg"
+              },
+              "default": [],
+              "required": false
+            },
+            "attributes": {
+              "description": "Risultato del limite impostato sui prodotti con attributi globali selezionati.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "attribute": {
+                    "description": "Nome tassonomia attributo.",
+                    "type": "string",
+                    "sanitize_callback": "wc_sanitize_taxonomy_name"
+                  },
+                  "term_id": {
+                    "description": "Elenco di ID del termine dell'attributo.",
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    },
+                    "sanitize_callback": "wp_parse_id_list"
+                  },
+                  "slug": {
+                    "description": "Elenco degli slug degli attributi. Se viene fornito un ID del termine, questo verrà ignorato.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "sanitize_callback": "wp_parse_slug_list"
+                  },
+                  "operator": {
+                    "description": "Operatore per confrontare i termini dell’attributo del prodotto.",
+                    "type": "string",
+                    "enum": [
+                      "in",
+                      "not_in",
+                      "and"
+                    ]
+                  }
+                }
+              },
+              "default": [],
+              "required": false
+            },
+            "attribute_relation": {
+              "description": "Relazione logica tra gli attributi quando ne vengono filtrati più contemporaneamente.",
+              "type": "string",
+              "enum": [
+                "in",
+                "and"
+              ],
+              "default": "and",
+              "required": false
+            },
+            "catalog_visibility": {
+              "description": "Determina se vengono visualizzati i prodotti nascosti o visibili del catalogo.",
+              "type": "string",
+              "enum": [
+                "any",
+                "visible",
+                "catalog",
+                "search",
+                "hidden"
+              ],
+              "required": false
+            },
+            "rating": {
+              "description": "Risultato del limite impostato su prodotti con una determinata media delle valutazioni.",
+              "type": "array",
+              "items": {
+                "type": "integer",
+                "enum": [
+                  1,
+                  2,
+                  3,
+                  4,
+                  5
+                ]
+              },
+              "default": [],
+              "required": false
+            }
+          }
+        }
+      ],
+      "_links": {
+        "self": [
+          {
+            "href": "https://www.evacaffe.it/wp-json/wc/store/products"
+          }
+        ]
+      }
+    },
+    "/wc/store/products/(?P<id>[\\d]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "id": {
+              "description": "Identificatore univoco per la risorsa.",
+              "type": "integer",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    },
+    "/wc/store/products/(?P<slug>[\\S]+)": {
+      "namespace": "wc/store",
+      "methods": [
+        "GET"
+      ],
+      "endpoints": [
+        {
+          "methods": [
+            "GET"
+          ],
+          "allow_batch": {
+            "v1": true
+          },
+          "args": {
+            "slug": {
+              "description": "Slug della risorsa.",
+              "type": "string",
+              "required": false
+            },
+            "context": {
+              "description": "Ambito nel quale la richiesta è effettuata; determina i campi presenti nella risposta.",
+              "type": "string",
+              "enum": [
+                "view",
+                "edit"
+              ],
+              "default": "view",
+              "required": false
+            }
+          }
+        }
+      ]
+    }
+  },
+  "_links": {
+    "up": [
+      {
+        "href": "https://www.evacaffe.it/wp-json/"
+      }
+    ]
+  }
+}

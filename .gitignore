@@ -41,4 +41,10 @@ allowlist_authorized_keys
 bin/
 dist/
 
+.env
+
+# Private carts, customer addresses and payment recovery state
+/var/
+/wordpress/eva-terminal-gateway/vendor/
+/wordpress/eva-terminal-gateway/vendor-prefixed/
 

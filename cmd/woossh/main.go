@@ -12,19 +12,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/ssh"
-	"github.com/charmbracelet/wish"
-	"github.com/charmbracelet/wish/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/ssh"
+	"charm.land/wish/v2"
+	"charm.land/wish/v2/bubbletea"
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/thomas/eva-terminal-go/internal/auth"
-	"github.com/thomas/eva-terminal-go/internal/cache"
 	"github.com/thomas/eva-terminal-go/internal/config"
+	"github.com/thomas/eva-terminal-go/internal/storeapi"
+	"github.com/thomas/eva-terminal-go/internal/storefront"
 	"github.com/thomas/eva-terminal-go/internal/tui"
-	"github.com/thomas/eva-terminal-go/internal/woo"
 )
 
 func main() {
@@ -64,18 +64,16 @@ func main() {
 		log.Printf("This is NOT safe for internet-facing servers.")
 	}
 
-	// Create WooCommerce client
-	clientOpts := []woo.ClientOption{}
-	log.Printf("WooCommerce API credentials: %s, %s", cfg.WooConsumerKey, cfg.WooConsumerSecret)
-	if cfg.WooConsumerKey != "" && cfg.WooConsumerSecret != "" {
-		log.Printf("Using WooCommerce API credentials from environment")
-		clientOpts = append(clientOpts, woo.WithCredentials(cfg.WooConsumerKey, cfg.WooConsumerSecret))
+	appCtx, stop := context.WithCancel(context.Background())
+	defer stop()
+	catalog, err := storefront.NewCatalog(storeapi.NewClient(cfg.WooBaseURL, storeapi.WithStorePrefix(cfg.WooStorePrefix)), cfg.StateDir, cfg.WooBaseURL+cfg.WooStorePrefix)
+	if err != nil {
+		log.Fatal(err)
 	}
-	wooClient := woo.NewClient(cfg.WooBaseURL, clientOpts...)
-
-	// Create caches
-	productsCache := cache.New[tui.ProductListCacheKey, []woo.Product](cfg.CacheTTL)
-	variationsCache := cache.New[int, []woo.Variation](cfg.CacheTTL)
+	go catalog.Run(appCtx, cfg.CacheTTL)
+	sessions := storefront.NewSessions(appCtx, cfg.StateDir, cfg.WooBaseURL+cfg.WooStorePrefix, func(token string) *storeapi.Client {
+		return storeapi.NewClient(cfg.WooBaseURL, storeapi.WithStorePrefix(cfg.WooStorePrefix), storeapi.WithSessionTokens(token, ""), storeapi.WithBridgeKey(cfg.BridgeKey))
+	})
 
 	// Create SSH server options
 	opts := []ssh.Option{
@@ -83,7 +81,15 @@ func main() {
 		wish.WithHostKeyPath(cfg.SSHHostKeyPath),
 		wish.WithMiddleware(
 			bubbletea.Middleware(func(s ssh.Session) (tea.Model, []tea.ProgramOption) {
-				return tui.NewModel(wooClient, productsCache, variationsCache), []tea.ProgramOption{tea.WithAltScreen()}
+				if s.PublicKey() == nil {
+					return tui.NewErrorModel("A verified SSH key is required"), nil
+				}
+				shopper, err := sessions.Open(gossh.FingerprintSHA256(s.PublicKey()))
+				if err != nil {
+					log.Printf("Cannot restore shopper state: %v", err)
+					return tui.NewErrorModel("Cannot restore shopper state; contact the store"), nil
+				}
+				return tui.NewStorefrontModel(s.Context(), catalog, shopper, cfg.CheckoutEnabled), nil
 			}),
 		),
 	}
@@ -129,7 +135,8 @@ func main() {
 	<-done
 	log.Println("Shutting down...")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5)
+	stop()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
@@ -176,9 +183,3 @@ func ensureHostKey(path string) error {
 
 	return nil
 }
-
-// Dummy usage to prevent import errors
-var _ = list.Model{}
-
-
-

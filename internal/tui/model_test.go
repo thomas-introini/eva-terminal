@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/thomas/eva-terminal-go/internal/cache"
+	"github.com/thomas/eva-terminal-go/internal/storeapi"
 	"github.com/thomas/eva-terminal-go/internal/woo"
 )
 
@@ -17,31 +19,95 @@ import (
 func setupTestModel(t *testing.T, products []woo.Product, variations map[int][]woo.Variation) (Model, *httptest.Server) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cart-Token", "test-cart-token")
+		w.Header().Set("Nonce", "test-nonce")
 
-		if r.URL.Path == "/wp-json/wc/v3/products" {
-			json.NewEncoder(w).Encode(products)
+		if r.URL.Path == "/wp-json/wc/store/v1/products" {
+			query := r.URL.Query()
+			if query.Get("type") == "variation" {
+				parentID, _ := strconv.Atoi(query.Get("parent"))
+				storeProducts := make([]storeapi.Product, 0)
+				for _, v := range variations[parentID] {
+					storeProducts = append(storeProducts, storeapi.Product{
+						ID:          v.ID,
+						Type:        "variation",
+						StockStatus: v.StockStatus,
+						Prices: storeapi.ProductPrices{
+							Price:        minor(v.Price),
+							RegularPrice: minor(v.RegularPrice),
+							SalePrice:    minor(v.SalePrice),
+						},
+					})
+				}
+				json.NewEncoder(w).Encode(storeProducts)
+				return
+			}
+
+			storeProducts := make([]storeapi.Product, 0, len(products))
+			for _, p := range products {
+				attrs := make([]storeapi.ProductAttribute, 0, len(p.Attributes))
+				for _, a := range p.Attributes {
+					terms := make([]storeapi.Term, 0, len(a.Options))
+					for _, opt := range a.Options {
+						terms = append(terms, storeapi.Term{Name: opt})
+					}
+					attrs = append(attrs, storeapi.ProductAttribute{
+						ID:            a.ID,
+						Name:          a.Name,
+						HasVariations: a.Variation,
+						Terms:         terms,
+					})
+				}
+				metadata := make([]storeapi.ProductVariation, 0)
+				for _, v := range variations[p.ID] {
+					va := make([]storeapi.ProductVariationAttribute, 0)
+					for _, attr := range v.Attributes {
+						va = append(va, storeapi.ProductVariationAttribute{Name: attr.Name, Value: attr.Option})
+					}
+					metadata = append(metadata, storeapi.ProductVariation{ID: v.ID, Attributes: va})
+				}
+
+				storeProducts = append(storeProducts, storeapi.Product{
+					ID:          p.ID,
+					Name:        p.Name,
+					Type:        p.Type,
+					Description: p.Description,
+					ShortDesc:   p.ShortDescription,
+					StockStatus: p.StockStatus,
+					Prices: storeapi.ProductPrices{
+						Price:        minor(p.Price),
+						RegularPrice: minor(p.RegularPrice),
+						SalePrice:    minor(p.SalePrice),
+					},
+					Attributes: attrs,
+					Variations: metadata,
+				})
+			}
+			json.NewEncoder(w).Encode(storeProducts)
 			return
 		}
 
-		// Check for variations endpoint
-		for productID, vars := range variations {
-			expectedPath := "/wp-json/wc/v3/products/" + string(rune('0'+productID/100)) + string(rune('0'+(productID/10)%10)) + string(rune('0'+productID%10)) + "/variations"
-			if r.URL.Path == expectedPath {
-				json.NewEncoder(w).Encode(vars)
-				return
-			}
-		}
-
 		// Default: return empty array
-		json.NewEncoder(w).Encode([]woo.Product{})
+		json.NewEncoder(w).Encode([]storeapi.Product{})
 	}))
 
-	client := woo.NewClient(server.URL)
+	client := storeapi.NewClient(server.URL)
 	productsCache := cache.New[ProductListCacheKey, []woo.Product](time.Minute)
 	variationsCache := cache.New[int, []woo.Variation](time.Minute)
 
 	model := NewModel(client, productsCache, variationsCache)
 	return model, server
+}
+
+func minor(price string) string {
+	if price == "" {
+		return ""
+	}
+	f, err := strconv.ParseFloat(price, 64)
+	if err != nil {
+		return "0"
+	}
+	return strconv.Itoa(int(f * 100))
 }
 
 func TestNewModel(t *testing.T) {
@@ -104,7 +170,7 @@ func TestViewStateTransitions(t *testing.T) {
 	}
 
 	// Go back to list
-	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	newModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = newModel.(Model)
 
 	if m.GetViewState() != ViewProductList {
@@ -221,7 +287,7 @@ func TestFilterToggle(t *testing.T) {
 	}
 
 	// Toggle filter with 'f' key
-	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	newModel, _ := m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	m = newModel.(Model)
 
 	if !m.inStockOnly {
@@ -229,7 +295,7 @@ func TestFilterToggle(t *testing.T) {
 	}
 
 	// Toggle again
-	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	newModel, _ = m.Update(tea.KeyPressMsg{Code: 'f', Text: string('f')})
 	m = newModel.(Model)
 
 	if m.inStockOnly {
@@ -253,7 +319,7 @@ func TestSearchMode(t *testing.T) {
 	}
 
 	// Enter search mode with '/' key
-	newModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	newModel, _ := m.Update(tea.KeyPressMsg{Code: '/', Text: string('/')})
 	m = newModel.(Model)
 
 	if !m.showSearch {
@@ -261,7 +327,7 @@ func TestSearchMode(t *testing.T) {
 	}
 
 	// Exit search mode with Esc
-	newModel, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	newModel, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = newModel.(Model)
 
 	if m.showSearch {
@@ -310,7 +376,7 @@ func TestViewRendering(t *testing.T) {
 
 	// Test product list view
 	view := m.View()
-	if view == "" {
+	if view.Content == "" || !view.AltScreen {
 		t.Error("expected non-empty view output")
 	}
 
@@ -318,7 +384,7 @@ func TestViewRendering(t *testing.T) {
 	m.selectedProduct = &products[0]
 	m.viewState = ViewProductDetails
 	detailsView := m.View()
-	if detailsView == "" {
+	if detailsView.Content == "" || !detailsView.AltScreen {
 		t.Error("expected non-empty details view output")
 	}
 }
@@ -358,4 +424,3 @@ func TestConfigurationSummary(t *testing.T) {
 		t.Error("expected config to be marked as completed")
 	}
 }
-

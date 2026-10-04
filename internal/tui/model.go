@@ -2,17 +2,22 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/list"
+	"charm.land/bubbles/v2/spinner"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/thomas/eva-terminal-go/internal/cache"
+	"github.com/thomas/eva-terminal-go/internal/storeapi"
+	"github.com/thomas/eva-terminal-go/internal/storefront"
 	"github.com/thomas/eva-terminal-go/internal/woo"
 )
 
@@ -27,6 +32,7 @@ const (
 	ViewAddress // Address entry
 	ViewReview  // Review order with calculated totals
 	ViewOrderConfirmation
+	ViewShipping
 )
 
 // ProductListCacheKey is the cache key for product lists.
@@ -39,8 +45,23 @@ type ProductListCacheKey struct {
 
 // Model is the main Bubble Tea model for the TUI.
 type Model struct {
+	ctx             context.Context
+	catalog         *storefront.Catalog
+	catalogUpdated  time.Time
+	shopper         *storefront.Session
+	changes         <-chan storefront.SessionState
+	sessionState    storefront.SessionState
+	checkoutEnabled bool
+	quote           storeapi.Quote
+	preparing       bool
+	polling         bool
+	pollStep        int
+	cartInput       textinput.Model
+	couponMode      string
+	shippingForm    *huh.Form
+
 	// Dependencies
-	wooClient       *woo.Client
+	storeClient     *storeapi.Client
 	productsCache   *cache.Cache[ProductListCacheKey, []woo.Product]
 	variationsCache *cache.Cache[int, []woo.Variation]
 
@@ -89,13 +110,15 @@ type Model struct {
 
 // CustomerInfo holds customer information for checkout.
 type CustomerInfo struct {
-	FirstName string
-	LastName  string
-	Email     string
-	Address   string
-	City      string
-	Postcode  string
-	Country   string
+	FirstName        string
+	LastName         string
+	Email            string
+	Address          string
+	City             string
+	Postcode         string
+	State            string
+	Phone            string
+	Country          string
 	AddressConfirmed bool
 }
 
@@ -119,7 +142,7 @@ func (i productItem) Description() string {
 	if i.product.IsVariable() {
 		typeLabel = " [Variable]"
 	}
-	return fmt.Sprintf("$%s • %s%s", price, stock, typeLabel)
+	return fmt.Sprintf("%s %s • %s%s", i.product.CurrencyCode, price, stock, typeLabel)
 }
 
 func (i productItem) FilterValue() string {
@@ -143,7 +166,7 @@ type (
 )
 
 // NewModel creates a new TUI model.
-func NewModel(wooClient *woo.Client, productsCache *cache.Cache[ProductListCacheKey, []woo.Product], variationsCache *cache.Cache[int, []woo.Variation]) Model {
+func NewModel(storeClient *storeapi.Client, productsCache *cache.Cache[ProductListCacheKey, []woo.Product], variationsCache *cache.Cache[int, []woo.Variation]) Model {
 	styles := DefaultStyles()
 
 	// Initialize spinner
@@ -155,7 +178,7 @@ func NewModel(wooClient *woo.Client, productsCache *cache.Cache[ProductListCache
 	ti := textinput.New()
 	ti.Placeholder = "Search products..."
 	ti.CharLimit = 50
-	ti.Width = 30
+	ti.SetWidth(30)
 
 	// Initialize product list
 	delegate := list.NewDefaultDelegate()
@@ -173,7 +196,7 @@ func NewModel(wooClient *woo.Client, productsCache *cache.Cache[ProductListCache
 	productList.Styles.Title = styles.ListTitle
 
 	return Model{
-		wooClient:       wooClient,
+		storeClient:     storeClient,
 		productsCache:   productsCache,
 		variationsCache: variationsCache,
 		viewState:       ViewProductList,
@@ -190,6 +213,9 @@ func NewModel(wooClient *woo.Client, productsCache *cache.Cache[ProductListCache
 
 // Init initializes the model.
 func (m Model) Init() tea.Cmd {
+	if m.shopper != nil {
+		return tea.Batch(m.listSpinner.Tick, m.loadProducts(), m.waitShopper(), tea.Tick(time.Second, func(time.Time) tea.Msg { return catalogTickMsg{} }))
+	}
 	return tea.Batch(
 		m.listSpinner.Tick,
 		m.loadProducts(),
@@ -205,9 +231,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.productList.SetSize(msg.Width-4, msg.Height-8)
+
+	case tea.KeyReleaseMsg:
 		return m, nil
 
-	case tea.KeyMsg:
+	case catalogTickMsg:
+		if m.catalog != nil {
+			var reload tea.Cmd
+			updated, _ := m.catalog.Status()
+			if m.viewState == ViewProductList && updated != m.catalogUpdated {
+				reload = m.loadProducts()
+			}
+			cmds = append(cmds, reload, tea.Tick(time.Second, func(time.Time) tea.Msg { return catalogTickMsg{} }))
+		}
+	case checkoutSubmittedMsg:
+		m.creatingOrder = false
+		m.viewState = ViewOrderConfirmation
+		m.applyShopper(m.shopper.Snapshot())
+	case storefrontMsg:
+		m.applyShopper(msg.state)
+		cmds = append(cmds, m.waitShopper())
+		if m.sessionState.Attempt != nil && m.sessionState.Attempt.Active() && !m.polling {
+			m.polling = true
+			cmds = append(cmds, m.pollPayment())
+		}
+	case paymentPollMsg:
+		m.pollStep++
+		m.polling = false
+		if m.sessionState.Attempt != nil && m.sessionState.Attempt.Active() {
+			m.polling = true
+			cmds = append(cmds, m.pollPayment())
+		}
+	case preparedMsg:
+		m.preparing = false
+		m.err = msg.err
+		if msg.err == nil {
+			m.quote = msg.quote
+		}
+	case shippingCompleteMsg:
+		m.shippingForm = nil
+		m.viewState = ViewCart
+	case tea.KeyPressMsg:
 		return m.handleKeyMsg(msg)
 
 	case spinner.TickMsg:
@@ -216,6 +280,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 	case productsLoadedMsg:
+		if m.catalog != nil {
+			m.catalogUpdated, _ = m.catalog.Status()
+		}
+		if m.viewState == ViewProductList {
+			m.err = nil
+		}
 		m.loadingProducts = false
 		m.products = msg.products
 		m.updateProductList()
@@ -223,9 +293,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case variationsLoadedMsg:
 		m.loadingVariations = false
 		m.productVariations = msg.variations
-		if m.selectedProduct != nil && m.selectedProduct.IsVariable() {
-			m.initConfigurator()
-		}
 
 	case orderCreatedMsg:
 		m.creatingOrder = false
@@ -240,48 +307,61 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.creatingOrder = false
 	}
 
-	// Update sub-models based on view state
-	switch m.viewState {
-	case ViewProductList:
-		if m.showSearch {
-			var cmd tea.Cmd
-			m.searchInput, cmd = m.searchInput.Update(msg)
-			cmds = append(cmds, cmd)
-		} else {
-			var cmd tea.Cmd
-			m.productList, cmd = m.productList.Update(msg)
-			cmds = append(cmds, cmd)
-		}
-
-	case ViewConfigurator:
-		if m.configForm != nil {
-			form, cmd := m.configForm.Update(msg)
-			if f, ok := form.(*huh.Form); ok {
-				m.configForm = f
-				if m.configForm.State == huh.StateCompleted {
-					m.configCompleted = true
-				}
-			}
-			cmds = append(cmds, cmd)
-		}
-
-	case ViewAddress:
-		if m.addressForm != nil {
-			form, cmd := m.addressForm.Update(msg)
-			if f, ok := form.(*huh.Form); ok {
-				m.addressForm = f
-			}
-			cmds = append(cmds, cmd)
-		}
-	}
-
-	return m, tea.Batch(cmds...)
+	updated, cmd := m.updateActiveComponent(msg)
+	cmds = append(cmds, cmd)
+	return updated, tea.Batch(cmds...)
 }
 
-func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// All form messages, including asynchronous navigation, share completion handling.
+func (m Model) updateActiveComponent(msg tea.Msg) (Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch m.viewState {
+	case ViewShipping:
+		if m.shippingForm != nil {
+			updated, next := m.updateShipping(msg)
+			return updated.(Model), next
+		}
+	case ViewProductList:
+		if m.showSearch {
+			m.searchInput, cmd = m.searchInput.Update(msg)
+		} else {
+			m.productList, cmd = m.productList.Update(msg)
+		}
+	case ViewConfigurator:
+		if m.configForm != nil && !m.configCompleted {
+			form, next := m.configForm.Update(msg)
+			m.configForm = form.(*huh.Form)
+			cmd = next
+			if m.configForm.State == huh.StateCompleted {
+				m.err = m.extractConfigFormValues()
+				m.configCompleted = m.err == nil
+			}
+		}
+	case ViewAddress:
+		if m.addressForm != nil {
+			form, next := m.addressForm.Update(msg)
+			m.addressForm = form.(*huh.Form)
+			cmd = next
+			if m.addressForm.State == huh.StateCompleted {
+				m.viewState = ViewReview
+				if m.shopper != nil {
+					m.preparing = true
+					cmd = m.prepareReview()
+				}
+			}
+		}
+	}
+	return m, cmd
+}
+
+func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	// Global keys
+	if key == "o" && m.shopper != nil && m.couponMode == "" && !m.showSearch && m.viewState != ViewAddress && m.viewState != ViewConfigurator && m.viewState != ViewShipping && m.sessionState.Attempt != nil && m.sessionState.Attempt.Active() {
+		m.viewState = ViewOrderConfirmation
+		return m, nil
+	}
 	switch key {
 	case "ctrl+c", "q":
 		if m.viewState == ViewProductList && !m.showSearch {
@@ -302,6 +382,8 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleAddressKeys(msg)
 	case ViewReview:
 		return m.handleReviewKeys(msg)
+	case ViewShipping:
+		return m.updateShipping(msg)
 	case ViewOrderConfirmation:
 		return m.handleOrderConfirmationKeys(msg)
 	}
@@ -309,7 +391,7 @@ func (m Model) handleKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleProductListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleProductListKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	if m.showSearch {
@@ -332,14 +414,17 @@ func (m Model) handleProductListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "/":
 		m.showSearch = true
-		m.searchInput.Focus()
-		return m, textinput.Blink
+		cmd := m.searchInput.Focus()
+		return m, cmd
 
 	case "f":
 		m.inStockOnly = !m.inStockOnly
 		return m, m.loadProducts()
 
 	case "r":
+		if m.catalog != nil {
+			return m, m.refreshCatalog()
+		}
 		return m, m.loadProducts()
 
 	case "c":
@@ -354,14 +439,13 @@ func (m Model) handleProductListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.configCompleted = false
 			m.selectedVariation = nil
 			m.selectedGrindSize = ""
+			m.configForm = nil
+			m.productVariations = nil
+			m.err = nil
 
 			if m.selectedProduct.IsVariable() {
 				m.loadingVariations = true
 				return m, m.loadVariations(m.selectedProduct.ID)
-			}
-			// For simple products, go directly to configurator if grind options exist
-			if attr := m.selectedProduct.GetAttribute("Grind Size"); attr != nil && len(attr.Options) > 0 {
-				m.initSimpleConfigurator()
 			}
 		}
 	}
@@ -371,7 +455,7 @@ func (m Model) handleProductListKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) handleProductDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleProductDetailsKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
@@ -383,12 +467,25 @@ func (m Model) handleProductDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "c", "enter":
 		if m.selectedProduct != nil {
+			if m.shopper != nil && (!m.selectedProduct.IsInStock() || (m.selectedProduct.Purchasable != nil && !*m.selectedProduct.Purchasable)) {
+				m.err = fmt.Errorf("this product cannot be purchased")
+				return m, nil
+			}
 			if m.selectedProduct.IsVariable() && len(m.productVariations) > 0 {
-				m.initConfigurator()
 				m.viewState = ViewConfigurator
-			} else if attr := m.selectedProduct.GetAttribute("Grind Size"); attr != nil && len(attr.Options) > 0 {
-				m.initSimpleConfigurator()
-				m.viewState = ViewConfigurator
+				cmd := m.initConfigurator()
+				return m, cmd
+			} else if !m.selectedProduct.IsVariable() {
+				if attr := m.selectedProduct.GetAttribute("Grind Size"); attr != nil && len(attr.Options) > 0 {
+					m.viewState = ViewConfigurator
+					cmd := m.initSimpleConfigurator()
+					return m, cmd
+				}
+				m.err = m.addToCart()
+				if m.err == nil {
+					m.viewState = ViewCart
+				}
+				return m, nil
 			}
 		}
 		return m, nil
@@ -397,7 +494,7 @@ func (m Model) handleProductDetailsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleConfiguratorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleConfiguratorKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
@@ -410,30 +507,21 @@ func (m Model) handleConfiguratorKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "a":
 		// Add to cart if configuration is complete
 		if m.configCompleted && m.selectedProduct != nil {
-			m.addToCart()
-			m.viewState = ViewCart
+			m.err = m.addToCart()
+			if m.err == nil {
+				m.viewState = ViewCart
+			}
 			return m, nil
 		}
 	}
 
-	// Let the form handle the key
-	if m.configForm != nil {
-		form, cmd := m.configForm.Update(msg)
-		if f, ok := form.(*huh.Form); ok {
-			m.configForm = f
-			if m.configForm.State == huh.StateCompleted {
-				m.configCompleted = true
-				// Extract selected values from form
-				m.extractConfigFormValues()
-			}
-		}
-		return m, cmd
-	}
-
-	return m, nil
+	return m.updateActiveComponent(msg)
 }
 
-func (m Model) handleCartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleCartKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.shopper != nil {
+		return m.handleSyncedCartKeys(msg)
+	}
 	key := msg.String()
 
 	switch key {
@@ -470,8 +558,9 @@ func (m Model) handleCartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		// Proceed to checkout - enter address
 		if !m.localCart.IsEmpty() {
-			m.initAddressForm()
 			m.viewState = ViewAddress
+			cmd := m.initAddressForm()
+			return m, cmd
 		}
 		return m, nil
 
@@ -484,7 +573,7 @@ func (m Model) handleCartKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleAddressKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleAddressKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
@@ -494,34 +583,45 @@ func (m Model) handleAddressKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Handle address form
-	if m.addressForm != nil && m.addressForm.State != huh.StateCompleted {
-		form, cmd := m.addressForm.Update(msg)
-		if f, ok := form.(*huh.Form); ok {
-			m.addressForm = f
-			// When form is completed, go to review
-			if m.addressForm.State == huh.StateCompleted {
-				m.viewState = ViewReview
+	return m.updateActiveComponent(msg)
+}
+
+func (m Model) handleReviewKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.shopper != nil {
+		if msg.String() == "h" {
+			return m, m.initShipping()
+		}
+		if msg.String() == "c" {
+			m.viewState = ViewCart
+			return m, nil
+		}
+		if msg.String() == "enter" || msg.String() == "p" {
+			if m.preparing || m.creatingOrder {
+				return m, nil
+			}
+			current, err := storefront.QuoteFromCart(m.shopper.Snapshot().Cart)
+			if err != nil {
+				m.err = err
+				return m, nil
+			}
+			if current != m.quote {
+				m.quote = current
+				m.err = fmt.Errorf("quote changed; review the updated total and confirm again")
 				return m, nil
 			}
 		}
-		return m, cmd
 	}
-
-	return m, nil
-}
-
-func (m Model) handleReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch key {
 	case "esc":
 		m.viewState = ViewAddress
-		return m, nil
+		cmd := m.initAddressForm()
+		return m, cmd
 
 	case "enter", "p":
 		// Create order using WooCommerce v3 API
-		if !m.creatingOrder && !m.localCart.IsEmpty() {
+		if !m.creatingOrder && !m.preparing && !m.localCart.IsEmpty() {
 			m.creatingOrder = true
 			return m, m.createOrder()
 		}
@@ -531,7 +631,14 @@ func (m Model) handleReviewKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) handleOrderConfirmationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleOrderConfirmationKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.shopper != nil {
+		if msg.String() == "x" {
+			return m, m.cancelPayment()
+		}
+		m.viewState = ViewProductList
+		return m, nil
+	}
 	key := msg.String()
 
 	switch key {
@@ -546,38 +653,56 @@ func (m Model) handleOrderConfirmationKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 	return m, nil
 }
 
-func (m *Model) extractConfigFormValues() {
+func (m *Model) extractConfigFormValues() error {
+	m.selectedVariation = nil
+	m.selectedGrindSize = ""
 	if m.configForm == nil || m.selectedProduct == nil {
-		return
+		return fmt.Errorf("configuration is missing")
 	}
-
-	// Get form values - this is a bit tricky with huh forms
-	// The values are bound to the variables we passed in initConfigurator
-	// For now, we'll re-extract from the form's groups
-
-	// Find the selected variation based on size
-	if m.selectedProduct.IsVariable() && len(m.productVariations) > 0 {
-		// Try to find selected size from form
-		for _, v := range m.productVariations {
-			// Default to first variation if we can't determine selection
-			if m.selectedVariation == nil {
-				m.selectedVariation = &v
+	if m.selectedProduct.IsVariable() {
+		id := m.configForm.GetInt("variation_id")
+		for i := range m.productVariations {
+			if id > 0 && m.productVariations[i].ID == id {
+				m.selectedVariation = &m.productVariations[i]
+				break
 			}
 		}
+		if m.selectedVariation == nil {
+			return fmt.Errorf("select a valid size")
+		}
 	}
+	m.selectedGrindSize = m.configForm.GetString("grind")
+	return nil
 }
 
-func (m *Model) addToCart() {
+func (m *Model) addToCart() error {
 	if m.selectedProduct == nil {
-		return
+		return fmt.Errorf("select a product")
 	}
-
-	// Create local cart item with grind size
+	if m.selectedProduct.IsVariable() {
+		if err := m.extractConfigFormValues(); err != nil {
+			return err
+		}
+	}
 	item := NewLocalCartItemFromProduct(m.selectedProduct, m.selectedVariation, 1, m.selectedGrindSize)
+	if m.shopper != nil {
+		id := item.ProductID
+		if item.VariationID > 0 {
+			id = item.VariationID
+		}
+		if err := m.shopper.Add(storefront.Intent{ID: id, Name: item.Name, Grind: item.GrindSize, Quantity: 1}); err != nil {
+			return err
+		}
+		m.applyShopper(m.shopper.Snapshot())
+		return nil
+	}
 	m.localCart.AddItem(item)
+	return nil
 }
 
-func (m *Model) initAddressForm() {
+func (m *Model) initAddressForm() tea.Cmd {
+	m.err = nil
+	m.customerInfo.AddressConfirmed = false
 	m.addressForm = huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().
@@ -624,7 +749,9 @@ func (m *Model) initAddressForm() {
 			huh.NewInput().
 				Title("Country (2-letter code)").
 				Value(&m.customerInfo.Country).
-				Placeholder("US"),
+				Placeholder("IT"),
+			huh.NewInput().Title("State / province code").Value(&m.customerInfo.State),
+			huh.NewInput().Title("Phone").Value(&m.customerInfo.Phone),
 			huh.NewConfirm().
 				Key("enter").
 				Value(&m.customerInfo.AddressConfirmed).
@@ -639,78 +766,20 @@ func (m *Model) initAddressForm() {
 				Negative("No"),
 		),
 	).WithShowHelp(true).WithShowErrors(true)
+	return m.addressForm.Init()
 }
 
 // Order commands
 
 func (m Model) createOrder() tea.Cmd {
-	return func() tea.Msg {
-		if m.localCart.IsEmpty() {
-			return errMsg{err: fmt.Errorf("cart is empty")}
-		}
+	return m.createOrderWithStore()
+}
 
-		country := m.customerInfo.Country
-		if country == "" {
-			country = "IT" // Default to Italy
-		}
-
-		address := woo.BillingAddress{
-			FirstName: m.customerInfo.FirstName,
-			LastName:  m.customerInfo.LastName,
-			Email:     m.customerInfo.Email,
-			Address1:  m.customerInfo.Address,
-			City:      m.customerInfo.City,
-			Postcode:  m.customerInfo.Postcode,
-			Country:   country,
-		}
-
-		// Build line items from local cart
-		lineItems := make([]woo.OrderLineItem, len(m.localCart.Items))
-		for i, item := range m.localCart.Items {
-			lineItems[i] = woo.OrderLineItem{
-				ProductID:   item.ProductID,
-				VariationID: item.VariationID,
-				Quantity:    item.Quantity,
-			}
-			// Add grind size metadata if present
-			if item.GrindSize != "" {
-				lineItems[i].MetaData = []woo.OrderLineItemMetaData{
-					{Key: "pa_grind-size", Value: item.GrindSize},
-				}
-			}
-		}
-
-		// Calculate shipping locally
-		shippingCost := m.localCart.CalculateShipping()
-		shippingMethodID := "flat_rate"
-		shippingMethodTitle := "Flat Rate"
-		if shippingCost == 0 {
-			shippingMethodID = "free_shipping"
-			shippingMethodTitle = "Free Shipping"
-		}
-
-		req := woo.OrderRequest{
-			PaymentMethod:      "bacs",
-			PaymentMethodTitle: "Bank Transfer",
-			SetPaid:            false,
-			Billing:            address,
-			Shipping:           &address,
-			LineItems:          lineItems,
-			ShippingLines: []woo.ShippingLine{
-				{
-					MethodID:    shippingMethodID,
-					MethodTitle: shippingMethodTitle,
-					Total:       fmt.Sprintf("%.2f", shippingCost),
-				},
-			},
-		}
-
-		order, err := m.wooClient.CreateOrder(context.Background(), req)
-		if err != nil {
-			return errMsg{err: fmt.Errorf("creating order: %w", err)}
-		}
-		return orderCreatedMsg{order: order}
+func (m Model) createOrderWithStore() tea.Cmd {
+	if m.shopper == nil {
+		return func() tea.Msg { return errMsg{err: fmt.Errorf("durable shopper session is required for checkout")} }
 	}
+	return m.submitCheckout()
 }
 
 func (m *Model) updateProductList() {
@@ -722,6 +791,11 @@ func (m *Model) updateProductList() {
 }
 
 func (m Model) loadProducts() tea.Cmd {
+	if m.catalog != nil {
+		return func() tea.Msg {
+			return productsLoadedMsg{products: mapStoreProductsToWoo(m.catalog.Products(m.searchInput.Value(), m.inStockOnly))}
+		}
+	}
 	m.loadingProducts = true
 
 	return func() tea.Msg {
@@ -737,18 +811,16 @@ func (m Model) loadProducts() tea.Cmd {
 			return productsLoadedMsg{products: products}
 		}
 
-		// Fetch from API
-		params := woo.GetProductsParams{
-			Page:        m.currentPage,
-			PerPage:     m.perPage,
-			Search:      m.searchInput.Value(),
-			InStockOnly: m.inStockOnly,
-		}
-
-		products, err := m.wooClient.GetProducts(context.Background(), params)
+		storeProducts, err := m.storeClient.GetProducts(context.Background(), storeapi.ProductQuery{
+			Page:    m.currentPage,
+			PerPage: m.perPage,
+			Search:  m.searchInput.Value(),
+			InStock: m.inStockOnly,
+		})
 		if err != nil {
 			return errMsg{err: err}
 		}
+		products := mapStoreProductsToWoo(storeProducts)
 
 		// Cache the result
 		m.productsCache.Set(cacheKey, products)
@@ -758,17 +830,24 @@ func (m Model) loadProducts() tea.Cmd {
 }
 
 func (m Model) loadVariations(productID int) tea.Cmd {
+	if m.catalog != nil {
+		metadata := m.selectedProduct.VariationDetails
+		return func() tea.Msg {
+			return variationsLoadedMsg{variations: mapStoreVariationsToWoo(m.catalog.Variations(productID), metadata)}
+		}
+	}
+	metadata := m.selectedProduct.VariationDetails
 	return func() tea.Msg {
 		// Check cache first
 		if variations, ok := m.variationsCache.Get(productID); ok {
 			return variationsLoadedMsg{variations: variations}
 		}
 
-		// Fetch from API
-		variations, err := m.wooClient.GetVariations(context.Background(), productID)
+		storeVariations, err := m.storeClient.GetProductVariations(context.Background(), productID)
 		if err != nil {
 			return errMsg{err: err}
 		}
+		variations := mapStoreVariationsToWoo(storeVariations, metadata)
 
 		// Cache the result
 		m.variationsCache.Set(productID, variations)
@@ -777,105 +856,184 @@ func (m Model) loadVariations(productID int) tea.Cmd {
 	}
 }
 
-func (m *Model) initConfigurator() {
-	if m.selectedProduct == nil || !m.selectedProduct.IsVariable() {
-		return
-	}
+func mapStoreProductsToWoo(products []storeapi.Product) []woo.Product {
+	result := make([]woo.Product, 0, len(products))
+	for _, p := range products {
+		attrs := make([]woo.Attribute, 0, len(p.Attributes))
+		for _, attr := range p.Attributes {
+			options := make([]string, 0, len(attr.Terms))
+			for _, term := range attr.Terms {
+				options = append(options, term.Name)
+			}
+			attrs = append(attrs, woo.Attribute{
+				ID:        attr.ID,
+				Name:      attr.Name,
+				Variation: attr.HasVariations,
+				Options:   options,
+			})
+		}
 
-	// Build size options from variations
-	var sizeOptions []huh.Option[string]
-	sizeAttr := m.selectedProduct.GetAttribute("Size")
-	if sizeAttr != nil {
-		for _, opt := range sizeAttr.Options {
-			// Find the variation with this size to get its price
-			var price string
-			for _, v := range m.productVariations {
-				if v.GetAttributeValue("Size") == opt {
-					price = v.GetDisplayPrice()
-					break
+		var ext struct {
+			Grinds []string `json:"grinds"`
+		}
+		if json.Unmarshal(p.Extensions["eva_terminal"], &ext) == nil && len(ext.Grinds) > 0 {
+			kept := attrs[:0]
+			for _, a := range attrs {
+				if a.Name != "Grind Size" {
+					kept = append(kept, a)
 				}
 			}
-			label := opt
-			if price != "" {
-				label = fmt.Sprintf("%s ($%s)", opt, price)
+			attrs = append(kept, woo.Attribute{Name: "Grind Size", Options: ext.Grinds})
+		}
+		ids := make([]int, 0, len(p.Variations))
+		metadata := make([]woo.Variation, 0, len(p.Variations))
+		for _, v := range p.Variations {
+			ids = append(ids, v.ID)
+			va := make([]woo.VariationAttribute, 0, len(v.Attributes))
+			for _, attr := range v.Attributes {
+				value := attr.Value
+				for _, parentAttr := range p.Attributes {
+					if parentAttr.Name == attr.Name {
+						for _, term := range parentAttr.Terms {
+							if term.Slug == value {
+								value = term.Name
+								break
+							}
+						}
+					}
+				}
+				va = append(va, woo.VariationAttribute{Name: attr.Name, Option: value})
 			}
-			sizeOptions = append(sizeOptions, huh.NewOption(label, opt))
+			metadata = append(metadata, woo.Variation{ID: v.ID, Attributes: va})
 		}
+
+		result = append(result, woo.Product{
+			ID:               p.ID,
+			Name:             p.Name,
+			Type:             p.Type,
+			Status:           "publish",
+			Description:      p.Description,
+			ShortDescription: p.ShortDesc,
+			Price:            p.Prices.DisplayPrice(),
+			RegularPrice:     storeapi.FormatMinor(p.Prices.RegularPrice, p.Prices.MinorUnit()),
+			SalePrice:        storeapi.FormatMinor(p.Prices.SalePrice, p.Prices.MinorUnit()),
+			OnSale:           p.OnSale,
+			StockStatus:      storeStock(p),
+			CurrencyCode:     p.Prices.CurrencyCode, CurrencyMinorUnit: p.Prices.MinorUnit(), Purchasable: &p.IsPurchasable, PriceRange: storeRange(p.Prices),
+			Attributes:       attrs,
+			Variations:       ids,
+			VariationDetails: metadata,
+		})
 	}
-
-	// Build grind options
-	var grindOptions []huh.Option[string]
-	grindAttr := m.selectedProduct.GetAttribute("Grind Size")
-	if grindAttr != nil {
-		for _, opt := range grindAttr.Options {
-			grindOptions = append(grindOptions, huh.NewOption(opt, opt))
-		}
-	} else {
-		grindOptions = []huh.Option[string]{huh.NewOption("Whole Beans", "Whole Beans")}
-	}
-
-	var selectedSize string
-	var selectedGrind string
-
-	// Build form groups
-	var groups []*huh.Group
-
-	if len(sizeOptions) > 0 {
-		groups = append(groups, huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select Size").
-				Options(sizeOptions...).
-				Value(&selectedSize),
-		))
-	}
-
-	groups = append(groups, huh.NewGroup(
-		huh.NewSelect[string]().
-			Title("Select Grind Size").
-			Options(grindOptions...).
-			Value(&selectedGrind),
-	))
-
-	m.configForm = huh.NewForm(groups...).
-		WithShowHelp(true).
-		WithShowErrors(true)
-
-	// Store pointers for later access
-	m.selectedGrindSize = ""
+	return result
 }
 
-func (m *Model) initSimpleConfigurator() {
-	if m.selectedProduct == nil {
-		return
-	}
-
-	// Build grind options
-	var grindOptions []huh.Option[string]
-	grindAttr := m.selectedProduct.GetAttribute("Grind Size")
-	if grindAttr != nil {
-		for _, opt := range grindAttr.Options {
-			grindOptions = append(grindOptions, huh.NewOption(opt, opt))
+func mapStoreVariationsToWoo(products []storeapi.Product, metadata []woo.Variation) []woo.Variation {
+	result := make([]woo.Variation, 0, len(products))
+	for _, p := range products {
+		var attrs []woo.VariationAttribute
+		for _, v := range metadata {
+			if v.ID == p.ID {
+				attrs = v.Attributes
+				break
+			}
 		}
-	} else {
-		grindOptions = []huh.Option[string]{huh.NewOption("Whole Beans", "Whole Beans")}
+		if len(attrs) == 0 {
+			continue
+		}
+		result = append(result, woo.Variation{
+			ID:           p.ID,
+			Attributes:   attrs,
+			Price:        p.Prices.DisplayPrice(),
+			RegularPrice: storeapi.FormatMinor(p.Prices.RegularPrice, p.Prices.MinorUnit()),
+			SalePrice:    storeapi.FormatMinor(p.Prices.SalePrice, p.Prices.MinorUnit()),
+			StockStatus:  storeStock(p), Purchasable: &p.IsPurchasable,
+		})
 	}
+	return result
+}
 
-	var selectedGrind string
+func minorRawToDisplay(v string) string {
+	if v == "" {
+		return ""
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return v
+	}
+	return storeapi.FormatMinor(strconv.Itoa(n), 2)
+}
 
+func formatMinorAmount(v string) string {
+	if v == "" {
+		return ""
+	}
+	return minorRawToDisplay(v)
+}
+
+func (m *Model) initConfigurator() tea.Cmd {
+	m.configCompleted = false
+	m.selectedVariation = nil
+	m.selectedGrindSize = ""
+	m.configForm = nil
+	m.err = nil
+	if m.selectedProduct == nil || !m.selectedProduct.IsVariable() {
+		return nil
+	}
+	var sizeOptions []huh.Option[int]
+	for _, v := range m.productVariations {
+		if m.shopper != nil && (!v.IsInStock() || (v.Purchasable != nil && !*v.Purchasable)) {
+			continue
+		}
+		labels := []string{}
+		for _, a := range v.Attributes {
+			labels = append(labels, a.Name+": "+a.Option)
+		}
+		size := strings.Join(labels, ", ")
+		if size != "" && v.ID > 0 {
+			sizeOptions = append(sizeOptions, huh.NewOption(fmt.Sprintf("%s (%s %s)", size, m.selectedProduct.CurrencyCode, v.GetDisplayPrice()), v.ID))
+		}
+	}
+	if len(sizeOptions) == 0 {
+		m.err = fmt.Errorf("no valid sizes available")
+		return nil
+	}
 	m.configForm = huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Select Grind Size").
-				Options(grindOptions...).
-				Value(&selectedGrind),
-		),
+		huh.NewGroup(huh.NewSelect[int]().Key("variation_id").Title("Select Size").Options(sizeOptions...)),
+		huh.NewGroup(m.grindSelect()),
 	).WithShowHelp(true).WithShowErrors(true)
+	return m.configForm.Init()
+}
+
+func (m Model) grindSelect() *huh.Select[string] {
+	options := []huh.Option[string]{}
+	if attr := m.selectedProduct.GetAttribute("Grind Size"); attr != nil {
+		for _, opt := range attr.Options {
+			options = append(options, huh.NewOption(opt, opt))
+		}
+	}
+	if len(options) == 0 {
+		options = append(options, huh.NewOption("No grind option", ""))
+	}
+	return huh.NewSelect[string]().Key("grind").Title("Select Grind Size").Options(options...)
+}
+
+func (m *Model) initSimpleConfigurator() tea.Cmd {
+	m.configCompleted = false
+	m.selectedVariation = nil
+	m.selectedGrindSize = ""
+	m.err = nil
+	m.configForm = huh.NewForm(huh.NewGroup(m.grindSelect())).WithShowHelp(true).WithShowErrors(true)
+	return m.configForm.Init()
 }
 
 // View renders the current view.
-func (m Model) View() string {
+func (m Model) View() tea.View {
+	v := tea.NewView("Loading...")
+	v.AltScreen = true
+	v.ReportFocus = true
 	if m.width == 0 {
-		return "Loading..."
+		return v
 	}
 
 	var content string
@@ -893,11 +1051,16 @@ func (m Model) View() string {
 		content = m.viewAddress()
 	case ViewReview:
 		content = m.viewReview()
+	case ViewShipping:
+		if m.shippingForm != nil {
+			content = m.shippingForm.View()
+		}
 	case ViewOrderConfirmation:
 		content = m.viewOrderConfirmation()
 	}
 
-	return m.styles.App.Render(content)
+	v.SetContent(m.styles.App.Render(content))
+	return v
 }
 
 func (m Model) viewProductList() string {
@@ -922,16 +1085,31 @@ func (m Model) viewProductList() string {
 	if m.loadingProducts {
 		sb.WriteString(m.listSpinner.View())
 		sb.WriteString(" Loading products...")
-	} else if m.err != nil {
-		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err)))
 	} else {
 		sb.WriteString(m.productList.View())
 	}
 
+	if m.catalog != nil {
+		updated, err := m.catalog.Status()
+		if updated.IsZero() {
+			sb.WriteString("\nWaiting for first catalog snapshot")
+		} else {
+			sb.WriteString(fmt.Sprintf("\nCatalog updated %s ago", time.Since(updated).Round(time.Second)))
+		}
+		if err != nil {
+			sb.WriteString(" (refresh failed; saved catalog)")
+		}
+	}
+	if m.err != nil {
+		sb.WriteString("\n" + m.err.Error())
+	}
 	// Help bar with cart info
 	cartInfo := ""
 	if m.localCart.ItemCount() > 0 {
-		cartInfo = fmt.Sprintf(" • 🛒 %d items (%s)", m.localCart.ItemCount(), m.localCart.GetSubtotal())
+		cartInfo = fmt.Sprintf(" • 🛒 %d items (%s)", m.localCart.ItemCount(), "Woo cart")
+	}
+	if m.sessionState.Attempt != nil && m.sessionState.Attempt.Active() {
+		cartInfo += " • o pending payment"
 	}
 	help := "/ search • f filter in-stock • r refresh • enter select • c cart • q quit" + cartInfo
 	sb.WriteString("\n")
@@ -954,12 +1132,12 @@ func (m Model) viewProductDetails() string {
 
 	// Price
 	price := p.GetDisplayPrice()
-	if p.SalePrice != "" && p.SalePrice != p.RegularPrice {
-		sb.WriteString(m.styles.ProductSalePrice.Render(fmt.Sprintf("$%s", price)))
+	if p.OnSale {
+		sb.WriteString(m.styles.ProductSalePrice.Render(fmt.Sprintf("%s %s", p.CurrencyCode, price)))
 		sb.WriteString(" ")
-		sb.WriteString(m.styles.Subtle.Render(fmt.Sprintf("(was $%s)", p.RegularPrice)))
+		sb.WriteString(m.styles.Subtle.Render(fmt.Sprintf("(was %s %s)", p.CurrencyCode, p.RegularPrice)))
 	} else {
-		sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("$%s", price)))
+		sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("%s %s", p.CurrencyCode, price)))
 	}
 	sb.WriteString("\n")
 
@@ -1030,6 +1208,11 @@ func (m Model) viewConfigurator() string {
 	sb.WriteString(m.styles.ConfigTitle.Render(fmt.Sprintf("Configure: %s", m.selectedProduct.Name)))
 	sb.WriteString("\n\n")
 
+	if m.err != nil {
+		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err)))
+		sb.WriteString("\n\n")
+	}
+
 	// Form
 	if m.configForm != nil {
 		sb.WriteString(m.configForm.View())
@@ -1063,9 +1246,9 @@ func (m Model) renderConfigSummary() string {
 
 	if m.selectedVariation != nil {
 		sb.WriteString(fmt.Sprintf("Variation ID: %d\n", m.selectedVariation.ID))
-		sb.WriteString(fmt.Sprintf("Price: $%s\n", m.selectedVariation.GetDisplayPrice()))
+		sb.WriteString(fmt.Sprintf("Price: %s %s\n", m.selectedProduct.CurrencyCode, m.selectedVariation.GetDisplayPrice()))
 	} else if m.selectedProduct != nil {
-		sb.WriteString(fmt.Sprintf("Price: $%s\n", m.selectedProduct.GetDisplayPrice()))
+		sb.WriteString(fmt.Sprintf("Price: %s %s\n", m.selectedProduct.CurrencyCode, m.selectedProduct.GetDisplayPrice()))
 	}
 
 	if m.selectedGrindSize != "" {
@@ -1075,61 +1258,7 @@ func (m Model) renderConfigSummary() string {
 	return sb.String()
 }
 
-func (m Model) viewCart() string {
-	var sb strings.Builder
-
-	// Header
-	sb.WriteString(m.styles.HeaderTitle.Render("🛒 Shopping Cart"))
-	sb.WriteString("\n\n")
-
-	if m.localCart.IsEmpty() {
-		sb.WriteString(m.styles.Subtle.Render("Your cart is empty"))
-		sb.WriteString("\n\n")
-		sb.WriteString(m.styles.HelpBar.Render("esc back to products"))
-		return m.styles.Box.Render(sb.String())
-	}
-
-	// Cart items (local)
-	for i, item := range m.localCart.Items {
-		prefix := "  "
-		if i == m.localCart.SelectedIdx {
-			prefix = m.styles.Highlight.Render("▸ ")
-		}
-
-		name := item.GetDisplayName()
-		price := item.GetFormattedPrice()
-		qty := fmt.Sprintf("x%d", item.Quantity)
-		total := item.GetFormattedTotal()
-
-		line := fmt.Sprintf("%s%s  %s  %s  = %s", prefix, name, price, qty, total)
-		if i == m.localCart.SelectedIdx {
-			sb.WriteString(m.styles.Highlight.Render(line))
-		} else {
-			sb.WriteString(line)
-		}
-		sb.WriteString("\n")
-	}
-
-	// Totals (local estimate with shipping)
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("Subtotal: %s\n", m.localCart.GetSubtotal()))
-	sb.WriteString(fmt.Sprintf("Shipping: %s\n", m.localCart.GetShippingFormatted()))
-	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("Total: %s", m.localCart.GetTotal())))
-	sb.WriteString(fmt.Sprintf(" (%d items)", m.localCart.ItemCount()))
-	sb.WriteString("\n")
-	if remaining := m.localCart.AmountUntilFreeShipping(); remaining > 0 {
-		sb.WriteString(m.styles.Subtle.Render(fmt.Sprintf("Add $%.2f more for free shipping", remaining)))
-	} else {
-		sb.WriteString(m.styles.Success.Render("✓ Qualifies for free shipping!"))
-	}
-	sb.WriteString("\n")
-
-	// Help bar
-	sb.WriteString("\n")
-	sb.WriteString(m.styles.HelpBar.Render("↑/↓ select • +/- quantity • d delete • o checkout • s continue shopping • esc back"))
-
-	return m.styles.Box.Render(sb.String())
-}
+func (m Model) viewCart() string { return m.viewWooCart(false) }
 
 func (m Model) viewAddress() string {
 	var sb strings.Builder
@@ -1155,122 +1284,8 @@ func (m Model) viewAddress() string {
 	return m.styles.Box.Render(sb.String())
 }
 
-func (m Model) viewReview() string {
-	var sb strings.Builder
-
-	// Header with progress
-	sb.WriteString(m.styles.HeaderTitle.Render("📋 Review Order"))
-	sb.WriteString("  ")
-	sb.WriteString(m.styles.Subtle.Render("Step 2 of 2"))
-	sb.WriteString("\n\n")
-
-	if m.creatingOrder {
-		sb.WriteString(m.listSpinner.View())
-		sb.WriteString(" Placing order...")
-		return m.styles.Box.Render(sb.String())
-	}
-
-	if m.err != nil {
-		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Error: %v", m.err)))
-		sb.WriteString("\n\n")
-	}
-
-	// Shipping address
-	sb.WriteString(m.styles.Subtle.Render("Shipping Address:"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  %s %s\n", m.customerInfo.FirstName, m.customerInfo.LastName))
-	if m.customerInfo.Address != "" {
-		sb.WriteString(fmt.Sprintf("  %s\n", m.customerInfo.Address))
-	}
-	sb.WriteString(fmt.Sprintf("  %s %s %s\n", m.customerInfo.City, m.customerInfo.Postcode, m.customerInfo.Country))
-	sb.WriteString(fmt.Sprintf("  %s\n", m.customerInfo.Email))
-	sb.WriteString("\n")
-
-	// Items
-	sb.WriteString(m.styles.Subtle.Render("Items:"))
-	sb.WriteString("\n")
-	for _, item := range m.localCart.Items {
-		itemTotal := item.Price * float64(item.Quantity)
-		sb.WriteString(fmt.Sprintf("  • %s x%d = $%.2f\n", item.Name, item.Quantity, itemTotal))
-	}
-	sb.WriteString("\n")
-
-	// Shipping method (calculated locally)
-	shippingCost := m.localCart.CalculateShipping()
-	shippingLabel := "Flat Rate"
-	if shippingCost == 0 {
-		shippingLabel = "Free Shipping"
-	}
-	sb.WriteString(m.styles.Subtle.Render("Shipping Method:"))
-	sb.WriteString("\n")
-	sb.WriteString(fmt.Sprintf("  %s - $%.2f\n\n", shippingLabel, shippingCost))
-
-	// Totals
-	subtotal := m.localCart.Subtotal()
-	total := m.localCart.CalculateTotal()
-	sb.WriteString(fmt.Sprintf("Subtotal: $%.2f\n", subtotal))
-	if shippingCost > 0 {
-		sb.WriteString(fmt.Sprintf("Shipping: $%.2f\n", shippingCost))
-	} else {
-		sb.WriteString(m.styles.Success.Render("Shipping: FREE\n"))
-	}
-	sb.WriteString(m.styles.ProductPrice.Render(fmt.Sprintf("\nTotal: $%.2f", total)))
-	sb.WriteString("\n")
-
-	// Payment note
-	sb.WriteString("\n")
-	sb.WriteString(m.styles.Subtle.Render("Payment: Bank Transfer (BACS)"))
-	sb.WriteString("\n")
-
-	// Help bar
-	sb.WriteString("\n")
-	sb.WriteString(m.styles.HelpBar.Render("p/enter place order • esc back"))
-
-	return m.styles.Box.Render(sb.String())
-}
-
-func (m Model) viewOrderConfirmation() string {
-	var sb strings.Builder
-
-	// Header
-	sb.WriteString(m.styles.Success.Render("✓ Order Placed Successfully!"))
-	sb.WriteString("\n\n")
-
-	if m.orderResponse != nil {
-		sb.WriteString(fmt.Sprintf("Order #%d\n", m.orderResponse.ID))
-		sb.WriteString(fmt.Sprintf("Status: %s\n", m.orderResponse.Status))
-		sb.WriteString(fmt.Sprintf("Total: %s %s\n", m.orderResponse.Currency, m.orderResponse.Total))
-		sb.WriteString(fmt.Sprintf("Order Key: %s\n", m.orderResponse.OrderKey))
-
-		sb.WriteString("\n")
-		sb.WriteString(m.styles.Subtle.Render("Shipping Address:"))
-		sb.WriteString("\n")
-		sb.WriteString(fmt.Sprintf("  %s %s\n", m.customerInfo.FirstName, m.customerInfo.LastName))
-		if m.customerInfo.Address != "" {
-			sb.WriteString(fmt.Sprintf("  %s\n", m.customerInfo.Address))
-		}
-		sb.WriteString(fmt.Sprintf("  %s, %s %s\n",
-			m.customerInfo.City,
-			m.customerInfo.Postcode,
-			m.customerInfo.Country))
-
-		sb.WriteString("\n")
-		sb.WriteString(m.styles.Subtle.Render("Next Step:"))
-		sb.WriteString("\n")
-		sb.WriteString("  Complete payment via Bank Transfer (BACS)\n")
-	}
-
-	if m.err != nil {
-		sb.WriteString("\n")
-		sb.WriteString(m.styles.Error.Render(fmt.Sprintf("Note: %v", m.err)))
-	}
-
-	// Help bar
-	sb.WriteString("\n\n")
-	sb.WriteString(m.styles.HelpBar.Render("Press Enter to continue shopping"))
-
-	return m.styles.Box.Render(sb.String())
-}
+func (m Model) viewReview() string            { return m.viewWooCart(true) }
+func (m Model) viewOrderConfirmation() string { return m.viewPayment() }
 
 // GetSelectedProduct returns the currently selected product (for testing).
 func (m Model) GetSelectedProduct() *woo.Product {
@@ -1286,6 +1301,3 @@ func (m Model) GetViewState() ViewState {
 func (m Model) GetConfigCompleted() bool {
 	return m.configCompleted
 }
-
-
-

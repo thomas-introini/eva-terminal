@@ -57,6 +57,9 @@ func StripHTML(s string) string {
 
 // cleanupWhitespace normalizes whitespace in the string.
 func cleanupWhitespace(s string) string {
+	// The HTML tokenizer decodes &nbsp; to U+00A0, normalize it.
+	s = strings.ReplaceAll(s, "\u00a0", " ")
+
 	// Split into lines
 	lines := strings.Split(s, "\n")
 	var cleanLines []string
@@ -81,19 +84,19 @@ func cleanupWhitespace(s string) string {
 // decodeHTMLEntities decodes common HTML entities.
 func decodeHTMLEntities(s string) string {
 	replacements := map[string]string{
-		"&amp;":   "&",
-		"&lt;":    "<",
-		"&gt;":    ">",
-		"&quot;":  "\"",
-		"&#39;":   "'",
-		"&apos;":  "'",
-		"&nbsp;":  " ",
-		"&mdash;": "—",
-		"&ndash;": "–",
+		"&amp;":    "&",
+		"&lt;":     "<",
+		"&gt;":     ">",
+		"&quot;":   "\"",
+		"&#39;":    "'",
+		"&apos;":   "'",
+		"&nbsp;":   " ",
+		"&mdash;":  "—",
+		"&ndash;":  "–",
 		"&hellip;": "…",
-		"&copy;":  "©",
-		"&reg;":   "®",
-		"&trade;": "™",
+		"&copy;":   "©",
+		"&reg;":    "®",
+		"&trade;":  "™",
 	}
 
 	for entity, replacement := range replacements {
@@ -102,6 +105,3 @@ func decodeHTMLEntities(s string) string {
 
 	return s
 }
-
-
-

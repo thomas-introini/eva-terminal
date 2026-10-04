@@ -1,7 +1,7 @@
 // Package tui implements the terminal user interface using Bubble Tea.
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 // Color palette - warm coffee tones
 var (
@@ -160,6 +160,3 @@ func DefaultStyles() Styles {
 			MarginTop(1),
 	}
 }
-
-
-
