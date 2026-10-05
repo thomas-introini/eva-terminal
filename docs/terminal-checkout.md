@@ -61,6 +61,7 @@ make dev                       # mock store + SSH; test payment completes after 
 make test
 go test -race ./...
 go vet ./...
+go test ./cmd/mockwoo -run TestMockSSHShoppingWalkthrough -v
 make gateway-check
 make gateway-integration       # isolated Docker store on port 18081 + fake Stripe transport
 ```

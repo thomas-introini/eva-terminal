@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -247,5 +248,101 @@ func TestMockMoneyIsExact(t *testing.T) {
 		if got := toMinorString(tc.price); got != tc.minor {
 			t.Fatalf("%s became %s", tc.price, got)
 		}
+	}
+}
+
+// The UI keeps these guarantees; exercise the authoritative durable controller
+// under delay/failure rather than replacing it with a fake shopping model.
+func TestCheckoutSafeguardsWithDelayedAndFailedResponses(t *testing.T) {
+	t.Setenv("EVA_BRIDGE_KEY", "test-bridge-key-with-at-least-32-characters")
+	t.Setenv("MOCK_PAYMENT_SECONDS", "1")
+	backend := newMockStore()
+	var unavailable atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if unavailable.Load() && strings.Contains(r.URL.Path, "/cart") {
+			mockError(w, 503, "offline", "Store temporarily unavailable")
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+		backend.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	dir := t.TempDir()
+	factory := func(token string) *storeapi.Client {
+		return storeapi.NewClient(server.URL, storeapi.WithSessionTokens(token, ""), storeapi.WithBridgeKey(os.Getenv("EVA_BRIDGE_KEY")))
+	}
+	shopper, err := storefront.NewSessions(ctx, dir, server.URL, factory).Open("key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, grind := range []string{"Whole Beans", "Espresso"} {
+		if err = shopper.Add(storefront.Intent{ID: 1, Name: "Coffee", Grind: grind, Quantity: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	unavailable.Store(true)
+	if shopper.Sync(ctx) == nil || shopper.Snapshot().Error == "" {
+		t.Fatal("failed synchronization was hidden")
+	}
+	if len(shopper.Snapshot().Desired) != 2 {
+		t.Fatal("failed synchronization lost intentions")
+	}
+	unavailable.Store(false)
+	if err = shopper.Sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := shopper.Snapshot(); st.Error != "" || st.Pending || len(st.Cart.Items) != 2 {
+		t.Fatalf("recovery/grinds failed: %+v", st)
+	}
+	address := storeapi.CustomerAddress{FirstName: "Ada", LastName: "Lovelace", Email: "ada@example.com", Address1: "Via Roma 1", City: "Rome", Postcode: "00100", Country: "IT"}
+	if err = shopper.Address(ctx, address, address); err != nil {
+		t.Fatal(err)
+	}
+	if err = shopper.Prepare(ctx); err != nil {
+		t.Fatal(err)
+	}
+	oldQuote, err := storefront.QuoteFromCart(shopper.Snapshot().Cart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = shopper.Coupon(ctx, "COFFEE10", false); err != nil {
+		t.Fatal(err)
+	}
+	fields := storeapi.CheckoutRequest{BillingAddress: &address, ShippingAddress: &address}
+	if err = shopper.Checkout(ctx, oldQuote, fields); err == nil {
+		t.Fatal("changed quote did not require fresh confirmation")
+	}
+	if shopper.Snapshot().Attempt != nil {
+		t.Fatal("rejected quote allocated attempt")
+	}
+	quote, err := storefront.QuoteFromCart(shopper.Snapshot().Cart)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			if checkoutErr := shopper.Checkout(ctx, quote, fields); checkoutErr != nil {
+				t.Error(checkoutErr)
+			}
+		})
+	}
+	wg.Wait()
+	backend.mu.Lock()
+	count := len(backend.attempts)
+	attempt := *shopper.Snapshot().Attempt
+	// Payment becomes authoritative immediately before the cancellation response.
+	backend.attempts[attempt.AttemptID].Created = time.Now().Add(-2 * time.Second)
+	backend.mu.Unlock()
+	if count != 1 {
+		t.Fatalf("repeated confirmation made %d attempts", count)
+	}
+	if err = shopper.Cancel(ctx); err == nil {
+		t.Fatal("payment winning cancellation race was not reported")
+	}
+	if st := shopper.Snapshot(); st.Attempt.PaymentState != "paid" || len(st.Desired) != 0 {
+		t.Fatal("cancellation overrode paid state")
 	}
 }
