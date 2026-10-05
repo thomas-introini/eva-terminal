@@ -8,6 +8,16 @@ One Go process owns a shared, anonymous catalog and one controller per verified 
 
 A failed catalog refresh retains the previous snapshot and displays its age. An expired Cart-Token creates a new guest cart and revalidates saved items and address information. Woo can reject an item or change a quote; confirmation is required again. Unknown cart responses are reconciled with GET before any retry. Unknown checkout responses retain their attempt ID and exact request. Do not delete recovery files to retry a payment.
 
+## Terminal shopping flow
+
+Use `Enter` for the primary action, `Esc` to go back, `c` for the cart outside active forms, and `?` for current-screen help. `Ctrl+C` quits everywhere; `q` quits outside text entry and forms. Search is local and updates on typing or paste, with its query, stock filter, and result count kept visible. `s` returns to the shop outside forms/text entry, preserving the catalog selection, search, and each product’s draft choices. Browse with `↑`/`↓`, use `Tab`/`Shift+Tab` to focus size, grind, quantity, or Add, and change values with `←`/`→`. `+`/`-` adjust draft quantity, minimum one. Size changes update the unit price immediately. `Enter`/`a` adds the displayed choices and quantity and opens the cart; single-choice options are read-only.
+
+Checkout progresses through **Address → Delivery → Review → Payment**. Required address fields carry `*`, and Italy (`IT`) is the explicit default. Multiple delivery rates are offered after address entry; changing delivery from review returns to review and updates the quote. The review screen confirms the address and store-calculated total. Checkout is disabled while changes are unresolved or an operation is busy. Cart totals show when they are updating, and confirmation of a changed quote is required again.
+
+Payment instructions remain open until explicit navigation. `y` requests clipboard copying through OSC 52, with the full URL available for manual copying; `r` rechecks status. `x` opens a cancellation confirmation, `Enter` submits it, and `Esc` keeps the payment. The backend's authoritative result handles payment completing during cancellation. A pending payment locks cart edits and can be reopened with `o` or by reconnecting with the same verified key.
+
+Every screen uses a horizontally and vertically centered panel, capped at 100×28, with an EVA / shop / cart header. The cart segment shows the confirmed currency, total, and item quantity, and marks totals as updating during synchronization. At 80 columns and wider, the product list sits beside details and inline options; from 60×18 it stacks above them. Product descriptions scroll with `PgUp`/`PgDown`; `Home`/`End` select the first/last coffee. Cart lines, review, and payment instructions scroll using `PgUp`/`PgDown` and `Home`/`End`; totals and primary controls remain visible. Below 60×18, resize guidance preserves the active shopping state. Forms are resized with the terminal, and the coffee theme adapts to light/dark backgrounds, detected color support, and `NO_COLOR`.
+
 ## Install the gateway
 
 Build with PHP 8.2+, Composer, ZIP and the required Stripe PHP extensions (`curl`, `json`, `mbstring`):

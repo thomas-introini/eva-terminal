@@ -101,22 +101,40 @@ make docker-seed    # Re-seed products
 
 ## Keyboard Shortcuts
 
+`?` opens help for the current screen. The footer shows the primary actions; help lists all enabled actions. Close help with `Esc` or `?` to keep your screen and input focus.
+
 | Key | Action |
 |-----|--------|
-| `/` | Search products |
-| `f` | Toggle "in-stock only" filter |
-| `r` | Refresh product list |
-| `Enter` | Select product / confirm |
-| `c` (product list/details) | Open cart / configure product |
-| `a` | Add the configured product to cart |
-| `+` / `-` | Adjust selected cart quantity |
-| `c` / `u` (cart) | Apply / remove coupon |
-| `o` (cart) | Start checkout |
-| `Enter` (review) | Confirm Woo's quote |
-| `o` | Open the current payment attempt |
-| `x` (cart/payment) | Cancel a pending payment |
-| `Esc` / `Backspace` | Go back |
-| `q` / `Ctrl+C` | Quit |
+| `Enter` | Add the displayed size, grind, and quantity; elsewhere perform the primary action or confirm the current order total |
+| `Esc` | Go back; in search, clear the query and immediately restore results |
+| `c` | Open the cart outside forms and text entry |
+| `?` | Open or close help |
+| `Ctrl+C` | Quit everywhere |
+| `q` | Quit outside forms and text entry |
+| `/` (shop) | Search locally as you type or paste; `Enter` keeps the query |
+| `f` / `r` (shop) | Toggle stock filter / refresh catalog and selected options |
+| `a` (shop) | Add the displayed configuration |
+| `↑` / `↓` | Browse coffees, select delivery or cart items, or scroll review/payment |
+| `Tab` / `Shift+Tab` (shop) | Focus size, grind, quantity, or Add; skip read-only options |
+| `←` / `→` (shop) | Change the focused size, grind, or quantity; unit price updates immediately |
+| `+` / `-` (shop) | Adjust draft quantity, minimum one |
+| `PgUp` / `PgDown` | Scroll the product description or other long screens |
+| `Home` / `End` | First / last coffee in the shop; scroll other long screens |
+| `+` / `-`, `d` (cart) | Change quantity / delete the selected item |
+| `p` / `u` (cart) | Apply / remove a coupon; type or paste its code and press `Enter` |
+| `s` | Return to the shop outside forms/text entry, preserving search, selection, and product drafts |
+| `o` | Start checkout, confirm review, or open an existing pending payment |
+| `h` (cart/review) | Change delivery when multiple rates are available |
+| `r` (cart/review/payment) | Retry synchronization / refresh review / recheck payment status |
+| `y` (payment) | Request copying the full payment URL to your terminal's clipboard |
+| `x` (cart/payment) | Ask to cancel an active payment; `Enter` confirms, `Esc` keeps it |
+| `Tab` / `Shift+Tab` (forms) | Next / previous field |
+
+Shopping follows **Address → Delivery → Review → Payment**, with Delivery omitted when unnecessary. Required address fields are marked `*`; the country starts at Italy (`IT`). Review confirms the address and current store-calculated total. A changed quote requires another explicit confirmation. Adding coffee still opens the cart.
+
+All screens use a panel centered horizontally and vertically, capped at 100 columns × 28 rows. Its segmented header shows EVA, shop, and the cart’s confirmed total and quantity. At 80 columns and wider, products appear beside the selected coffee’s details and inline options; narrower supported terminals stack these sections. Choices stay with each product while browsing and returning from the cart. The UI supports 60×18 and larger terminals. Smaller terminals show a resize message and preserve shopping state. Long content scrolls while totals and primary controls stay visible. Cart changes show “totals updating”; checkout waits for synchronization and validation. Pending payments lock cart edits and remain available through `o` or reconnect.
+
+Payment instructions stay open until explicit navigation. The order number, amount, confirmation status, and link time remaining remain visible. Clipboard copying uses the terminal's OSC 52 support; “Copy requested” reports the request, and the full URL remains accessible for manual copying. The coffee theme adapts to the terminal background and color capability and respects `NO_COLOR`.
 
 ## Authentication Modes
 
@@ -236,4 +254,3 @@ go test -v ./internal/tui
 ## License
 
 MIT
-

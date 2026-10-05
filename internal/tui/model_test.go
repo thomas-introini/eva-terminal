@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -29,9 +30,11 @@ func setupTestModel(t *testing.T, products []woo.Product, variations map[int][]w
 				storeProducts := make([]storeapi.Product, 0)
 				for _, v := range variations[parentID] {
 					storeProducts = append(storeProducts, storeapi.Product{
-						ID:          v.ID,
-						Type:        "variation",
-						StockStatus: v.StockStatus,
+						ID:            v.ID,
+						Type:          "variation",
+						StockStatus:   v.StockStatus,
+						IsInStock:     v.IsInStock(),
+						IsPurchasable: v.Purchasable == nil || *v.Purchasable,
 						Prices: storeapi.ProductPrices{
 							Price:        minor(v.Price),
 							RegularPrice: minor(v.RegularPrice),
@@ -68,16 +71,20 @@ func setupTestModel(t *testing.T, products []woo.Product, variations map[int][]w
 				}
 
 				storeProducts = append(storeProducts, storeapi.Product{
-					ID:          p.ID,
-					Name:        p.Name,
-					Type:        p.Type,
-					Description: p.Description,
-					ShortDesc:   p.ShortDescription,
-					StockStatus: p.StockStatus,
+					ID:            p.ID,
+					Name:          p.Name,
+					Type:          p.Type,
+					Description:   p.Description,
+					ShortDesc:     p.ShortDescription,
+					StockStatus:   p.StockStatus,
+					IsInStock:     p.IsInStock(),
+					IsPurchasable: p.Purchasable == nil || *p.Purchasable,
 					Prices: storeapi.ProductPrices{
-						Price:        minor(p.Price),
-						RegularPrice: minor(p.RegularPrice),
-						SalePrice:    minor(p.SalePrice),
+						CurrencyCode:      p.CurrencyCode,
+						CurrencyMinorUnit: p.CurrencyMinorUnit,
+						Price:             minor(p.Price),
+						RegularPrice:      minor(p.RegularPrice),
+						SalePrice:         minor(p.SalePrice),
 					},
 					Attributes: attrs,
 					Variations: metadata,
@@ -129,144 +136,27 @@ func TestNewModel(t *testing.T) {
 }
 
 func TestViewStateTransitions(t *testing.T) {
-	products := []woo.Product{
-		{ID: 1, Name: "Simple Coffee", Type: "simple", Price: "10.00", StockStatus: "instock"},
-		{
-			ID:          101,
-			Name:        "Variable Coffee",
-			Type:        "variable",
-			Price:       "15.00",
-			StockStatus: "instock",
-			Variations:  []int{1011, 1012},
-			Attributes: []woo.Attribute{
-				{Name: "Size", Options: []string{"250g", "1kg"}, Variation: true},
-			},
-		},
-	}
-
-	model, server := setupTestModel(t, products, nil)
+	products := []woo.Product{{ID: 1, Name: "Simple Coffee", Type: "simple", Price: "10.00", StockStatus: "instock"}}
+	m, server := setupTestModel(t, products, nil)
 	defer server.Close()
-
-	// Set window size
-	updatedModel, _ := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m := updatedModel.(Model)
-
-	// Verify initial state
-	if m.GetViewState() != ViewProductList {
-		t.Error("expected ProductList view initially")
+	sendMessage(t, &m, m.loadProducts()())
+	if m.viewState != ViewProductList || m.selectedProduct.ID != 1 {
+		t.Fatal("shop preview missing")
 	}
-
-	// Simulate loading products (manual since we're testing synchronously)
-	m.products = products
-	m.updateProductList()
-
-	// Select first item and press enter
-	m.productList.Select(0)
-	m.selectedProduct = &products[0]
-	m.viewState = ViewProductDetails
-
-	if m.GetViewState() != ViewProductDetails {
-		t.Error("expected ProductDetails view after selection")
+	press(t, &m, tea.KeyEnter)
+	if m.viewState != ViewCart || m.localCart.ItemCount() != 1 {
+		t.Fatal("Enter did not add displayed coffee")
 	}
-
-	// Go back to list
-	newModel, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = newModel.(Model)
-
-	if m.GetViewState() != ViewProductList {
-		t.Error("expected ProductList view after pressing Esc")
+	press(t, &m, tea.KeyEscape)
+	if m.viewState != ViewProductList || m.selectedProduct.ID != 1 {
+		t.Fatal("Esc did not return to selected coffee")
 	}
 }
 
 func TestVariableProductTriggersVariationsFetch(t *testing.T) {
-	products := []woo.Product{
-		{
-			ID:          101,
-			Name:        "Variable Coffee",
-			Type:        "variable",
-			Price:       "15.00",
-			StockStatus: "instock",
-			Variations:  []int{1011, 1012},
-			Attributes: []woo.Attribute{
-				{Name: "Size", Options: []string{"250g", "1kg"}, Variation: true},
-				{Name: "Grind Size", Options: []string{"Beans", "Espresso"}, Variation: false},
-			},
-		},
-	}
-
-	variations := map[int][]woo.Variation{
-		101: {
-			{ID: 1011, Price: "14.99", StockStatus: "instock", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "250g"}}},
-			{ID: 1012, Price: "49.99", StockStatus: "instock", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "1kg"}}},
-		},
-	}
-
-	model, server := setupTestModel(t, products, variations)
-	defer server.Close()
-
-	m := model
-	m.products = products
-	m.updateProductList()
-
-	// Select the variable product
-	m.selectedProduct = &products[0]
-	m.viewState = ViewProductDetails
-
-	// Check that the product is variable
-	if !m.selectedProduct.IsVariable() {
-		t.Error("expected selected product to be variable")
-	}
-
-	// Simulate variations being loaded
-	m.productVariations = variations[101]
-
-	// Now entering configurator should work
-	m.initConfigurator()
-	m.viewState = ViewConfigurator
-
-	if m.GetViewState() != ViewConfigurator {
-		t.Error("expected Configurator view for variable product")
-	}
-}
-
-func TestSimpleProductGrindSelection(t *testing.T) {
-	products := []woo.Product{
-		{
-			ID:          1,
-			Name:        "Simple Coffee",
-			Type:        "simple",
-			Price:       "10.00",
-			StockStatus: "instock",
-			Attributes: []woo.Attribute{
-				{Name: "Grind Size", Options: []string{"Beans", "Espresso", "Filter"}, Variation: false},
-			},
-		},
-	}
-
-	model, server := setupTestModel(t, products, nil)
-	defer server.Close()
-
-	m := model
-	m.products = products
-	m.selectedProduct = &products[0]
-	m.viewState = ViewProductDetails
-
-	// Simple product should allow grind selection
-	grindAttr := m.selectedProduct.GetAttribute("Grind Size")
-	if grindAttr == nil {
-		t.Fatal("expected Grind Size attribute on simple product")
-	}
-
-	if len(grindAttr.Options) != 3 {
-		t.Errorf("expected 3 grind options, got %d", len(grindAttr.Options))
-	}
-
-	// Initialize simple configurator
-	m.initSimpleConfigurator()
-	m.viewState = ViewConfigurator
-
-	if m.GetViewState() != ViewConfigurator {
-		t.Error("expected Configurator view for grind selection")
+	m := variableModel(t)
+	if m.viewState != ViewProductList || len(m.productVariations) != 2 || m.selectedVariation.ID != 1011 {
+		t.Fatal("preview failed to load/default available size")
 	}
 }
 
@@ -344,7 +234,7 @@ func TestProductItemInterface(t *testing.T) {
 		StockStatus: "instock",
 	}
 
-	item := productItem{product: p, styles: DefaultStyles()}
+	item := productItem{product: p}
 
 	if item.Title() != "Test Coffee" {
 		t.Errorf("expected title 'Test Coffee', got '%s'", item.Title())
@@ -380,47 +270,15 @@ func TestViewRendering(t *testing.T) {
 		t.Error("expected non-empty view output")
 	}
 
-	// Test product details view
-	m.selectedProduct = &products[0]
-	m.viewState = ViewProductDetails
-	detailsView := m.View()
-	if detailsView.Content == "" || !detailsView.AltScreen {
-		t.Error("expected non-empty details view output")
-	}
 }
 
-func TestConfigurationSummary(t *testing.T) {
-	products := []woo.Product{
-		{
-			ID:          101,
-			Name:        "Variable Coffee",
-			Type:        "variable",
-			Price:       "15.00",
-			StockStatus: "instock",
-			Attributes: []woo.Attribute{
-				{Name: "Size", Options: []string{"250g", "1kg"}, Variation: true},
-			},
-		},
-	}
-
-	model, server := setupTestModel(t, products, nil)
-	defer server.Close()
-
-	m := model
-	m.selectedProduct = &products[0]
-	m.productVariations = []woo.Variation{
-		{ID: 1011, Price: "14.99", StockStatus: "instock"},
-	}
-	m.selectedVariation = &m.productVariations[0]
-	m.selectedGrindSize = "Espresso"
-	m.configCompleted = true
-
-	summary := m.renderConfigSummary()
-	if summary == "" {
-		t.Error("expected non-empty configuration summary")
-	}
-
-	if !m.GetConfigCompleted() {
-		t.Error("expected config to be marked as completed")
+func TestInlineConfigurationSummary(t *testing.T) {
+	m := variableModel(t)
+	completeConfiguration(t, &m)
+	view := m.View().Content
+	for _, text := range []string{"1kg", "Espresso", "EUR 49.99", "Qty", "Add to cart"} {
+		if !strings.Contains(view, text) {
+			t.Fatalf("missing %q in shop: %s", text, view)
+		}
 	}
 }

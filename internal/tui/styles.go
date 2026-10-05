@@ -1,162 +1,60 @@
-// Package tui implements the terminal user interface using Bubble Tea.
+// Package tui implements the terminal storefront.
 package tui
 
-import "charm.land/lipgloss/v2"
-
-// Color palette - warm coffee tones
-var (
-	colorCream     = lipgloss.Color("#FFF8E7")
-	colorEspresso  = lipgloss.Color("#3C2415")
-	colorCaramel   = lipgloss.Color("#D4A574")
-	colorMocha     = lipgloss.Color("#8B7355")
-	colorRoast     = lipgloss.Color("#5D4037")
-	colorHighlight = lipgloss.Color("#FF9800")
-	colorSuccess   = lipgloss.Color("#4CAF50")
-	colorWarning   = lipgloss.Color("#FFC107")
-	colorError     = lipgloss.Color("#F44336")
-	colorMuted     = lipgloss.Color("#9E9E9E")
+import (
+	"charm.land/huh/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 )
 
-// Styles holds all the lipgloss styles for the TUI.
 type Styles struct {
-	// App container
-	App lipgloss.Style
-
-	// Header
-	Header      lipgloss.Style
-	HeaderTitle lipgloss.Style
-	HeaderHelp  lipgloss.Style
-
-	// List styles
-	ListTitle        lipgloss.Style
-	ListItem         lipgloss.Style
-	ListItemSelected lipgloss.Style
-	ListItemDesc     lipgloss.Style
-
-	// Product details
-	ProductName        lipgloss.Style
-	ProductPrice       lipgloss.Style
-	ProductSalePrice   lipgloss.Style
-	ProductDescription lipgloss.Style
-	ProductAttribute   lipgloss.Style
-	ProductInStock     lipgloss.Style
-	ProductOutOfStock  lipgloss.Style
-
-	// Configurator
-	ConfigTitle   lipgloss.Style
-	ConfigOption  lipgloss.Style
-	ConfigSummary lipgloss.Style
-
-	// General
-	Subtle    lipgloss.Style
-	Highlight lipgloss.Style
-	Error     lipgloss.Style
-	Success   lipgloss.Style
-	Box       lipgloss.Style
-	HelpBar   lipgloss.Style
+	App, HeaderTitle, Subtle, Highlight, Selection, Border, Error, Success, HelpBar lipgloss.Style
 }
 
-// DefaultStyles returns the default TUI styles.
-func DefaultStyles() Styles {
-	return Styles{
-		App: lipgloss.NewStyle().
-			Padding(1, 2),
+func DefaultStyles() Styles { return coffeeStyles(true, false, colorprofile.TrueColor) }
 
-		Header: lipgloss.NewStyle().
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderBottom(true).
-			BorderForeground(colorMocha).
-			MarginBottom(1).
-			Padding(0, 1),
-
-		HeaderTitle: lipgloss.NewStyle().
-			Foreground(colorCaramel).
-			Bold(true),
-
-		HeaderHelp: lipgloss.NewStyle().
-			Foreground(colorMuted).
-			Italic(true),
-
-		ListTitle: lipgloss.NewStyle().
-			Foreground(colorCaramel).
-			Bold(true).
-			MarginBottom(1),
-
-		ListItem: lipgloss.NewStyle().
-			Foreground(colorCream).
-			PaddingLeft(2),
-
-		ListItemSelected: lipgloss.NewStyle().
-			Foreground(colorHighlight).
-			Bold(true).
-			PaddingLeft(1).
-			SetString("▸ "),
-
-		ListItemDesc: lipgloss.NewStyle().
-			Foreground(colorMuted),
-
-		ProductName: lipgloss.NewStyle().
-			Foreground(colorCaramel).
-			Bold(true).
-			MarginBottom(1),
-
-		ProductPrice: lipgloss.NewStyle().
-			Foreground(colorSuccess).
-			Bold(true),
-
-		ProductSalePrice: lipgloss.NewStyle().
-			Foreground(colorWarning).
-			Bold(true),
-
-		ProductDescription: lipgloss.NewStyle().
-			Foreground(colorCream).
-			MarginTop(1).
-			MarginBottom(1),
-
-		ProductAttribute: lipgloss.NewStyle().
-			Foreground(colorMocha),
-
-		ProductInStock: lipgloss.NewStyle().
-			Foreground(colorSuccess),
-
-		ProductOutOfStock: lipgloss.NewStyle().
-			Foreground(colorError),
-
-		ConfigTitle: lipgloss.NewStyle().
-			Foreground(colorCaramel).
-			Bold(true).
-			MarginBottom(1),
-
-		ConfigOption: lipgloss.NewStyle().
-			Foreground(colorCream),
-
-		ConfigSummary: lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(colorMocha).
-			Padding(1, 2).
-			MarginTop(1),
-
-		Subtle: lipgloss.NewStyle().
-			Foreground(colorMuted),
-
-		Highlight: lipgloss.NewStyle().
-			Foreground(colorHighlight).
-			Bold(true),
-
-		Error: lipgloss.NewStyle().
-			Foreground(colorError).
-			Bold(true),
-
-		Success: lipgloss.NewStyle().
-			Foreground(colorSuccess),
-
-		Box: lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(colorMocha).
-			Padding(1, 2),
-
-		HelpBar: lipgloss.NewStyle().
-			Foreground(colorMuted).
-			MarginTop(1),
+func coffeeStyles(dark, noColor bool, profile colorprofile.Profile) Styles {
+	accent, muted, success, danger := "#F5B916", "#A89F93", "#9BD598", "#FF9B8D"
+	if !dark {
+		accent, muted, success, danger = "#743C12", "#655445", "#24652D", "#AD2818"
 	}
+	colored := func(hex string) lipgloss.Style {
+		style := lipgloss.NewStyle()
+		if !noColor && profile != colorprofile.Ascii {
+			style = style.Foreground(profile.Convert(lipgloss.Color(hex)))
+		}
+		return style
+	}
+	title, subtle := colored(accent).Bold(true), colored(muted)
+	selection := lipgloss.NewStyle().Bold(true).Reverse(true)
+	if !noColor && profile != colorprofile.Ascii {
+		selection = lipgloss.NewStyle().Bold(true).Background(profile.Convert(lipgloss.Color("#F5B916"))).Foreground(profile.Convert(lipgloss.Color("#211B14")))
+	}
+	ok, bad := colored(success), colored(danger).Bold(true)
+	return Styles{
+		App: lipgloss.NewStyle().Padding(0, 1), HeaderTitle: title,
+		Subtle: subtle, Highlight: title, Selection: selection, Border: subtle, Error: bad, Success: ok, HelpBar: subtle,
+	}
+}
+
+func (m Model) formTheme() huh.Theme {
+	return huh.ThemeFunc(func(bool) *huh.Styles {
+		t := huh.ThemeBase(m.dark)
+		t.Focused.Base = lipgloss.NewStyle().Border(lipgloss.NormalBorder(), false, false, false, true).PaddingLeft(1)
+		t.Focused.Title = m.styles.HeaderTitle
+		t.Focused.Description = m.styles.Subtle
+		t.Focused.ErrorMessage, t.Focused.ErrorIndicator = m.styles.Error, m.styles.Error
+		t.Focused.SelectSelector = m.styles.Highlight.SetString("> ")
+		t.Focused.NextIndicator, t.Focused.PrevIndicator = m.styles.Subtle, m.styles.Subtle
+		t.Focused.Option = lipgloss.NewStyle()
+		t.Focused.TextInput.Text = lipgloss.NewStyle()
+		t.Focused.TextInput.Cursor = m.styles.Highlight
+		t.Focused.TextInput.Placeholder = m.styles.Subtle
+		t.Focused.TextInput.Prompt = m.styles.Highlight
+		t.Blurred = t.Focused
+		t.Blurred.Base = lipgloss.NewStyle().PaddingLeft(2)
+		t.Blurred.Title = m.styles.Subtle
+		t.Group.Title, t.Group.Description = m.styles.HeaderTitle, m.styles.Subtle
+		return t
+	})
 }

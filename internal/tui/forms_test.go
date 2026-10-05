@@ -62,95 +62,95 @@ func press(t *testing.T, m *Model, code rune) {
 
 func variableModel(t *testing.T) Model {
 	t.Helper()
-	products := []woo.Product{{ID: 101, Name: "Coffee", Type: "variable", Attributes: []woo.Attribute{
+	products := []woo.Product{{ID: 101, Name: "Coffee", Type: "variable", StockStatus: "instock", CurrencyCode: "EUR", CurrencyMinorUnit: 2, Attributes: []woo.Attribute{
 		{Name: "Size", Options: []string{"250g", "1kg"}, Variation: true},
-		{Name: "Grind Size", Options: []string{"Beans", "Espresso", "Filter"}},
+		{Name: "Grind Size", Options: []string{"Whole Beans", "Espresso", "Filter"}},
 	}}}
 	variations := map[int][]woo.Variation{101: {
-		{ID: 1011, Price: "14.99", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "250g"}}},
-		{ID: 1012, Price: "49.99", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "1kg"}}},
+		{ID: 1011, Price: "14.99", StockStatus: "instock", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "250g"}}},
+		{ID: 1012, Price: "49.99", StockStatus: "instock", Attributes: []woo.VariationAttribute{{Name: "Size", Option: "1kg"}}},
 	}}
 	m, server := setupTestModel(t, products, variations)
 	t.Cleanup(server.Close)
+	sendMessage(t, &m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	sendMessage(t, &m, m.loadProducts()())
-	press(t, &m, tea.KeyEnter)
-	if len(m.productVariations) != 2 || m.productVariations[1].GetAttributeValue("Size") != "1kg" {
-		t.Fatal("lost parent variation metadata")
-	}
-	press(t, &m, 'c')
-	if m.configForm == nil || m.configForm.GetFocusedField().GetKey() != "variation_id" {
-		t.Fatal("size form was not activated")
+	if len(m.productVariations) != 2 || m.productVariations[1].GetAttributeValue("Size") != "1kg" || m.shopFocus != "size" {
+		t.Fatal("inline sizes were not activated")
 	}
 	return m
 }
 
 func completeConfiguration(t *testing.T, m *Model) {
 	t.Helper()
-	press(t, m, tea.KeyDown)
-	press(t, m, tea.KeyEnter)
-	press(t, m, tea.KeyDown)
-	press(t, m, tea.KeyEnter)
-	if !m.configCompleted || m.selectedVariation == nil || m.selectedVariation.ID != 1012 || m.selectedGrindSize != "Espresso" {
-		t.Fatalf("lost selection: complete=%v variation=%+v grind=%q err=%v", m.configCompleted, m.selectedVariation, m.selectedGrindSize, m.err)
+	press(t, m, tea.KeyRight)
+	press(t, m, tea.KeyTab)
+	press(t, m, tea.KeyRight)
+	if m.selectedVariation == nil || m.selectedVariation.ID != 1012 || m.selectedGrindSize != "Espresso" {
+		t.Fatalf("lost selection: variation=%+v grind=%q err=%v", m.selectedVariation, m.selectedGrindSize, m.err)
 	}
 }
 
 func TestConfigurationSelectionsAndReentry(t *testing.T) {
 	m := variableModel(t)
 	completeConfiguration(t, &m)
-	press(t, &m, 'a')
+	press(t, &m, '+')
+	if !strings.Contains(m.View().Content, "EUR 49.99") {
+		t.Fatal("size did not update unit price")
+	}
+	press(t, &m, tea.KeyEnter)
 	if m.viewState != ViewCart || len(m.localCart.Items) != 1 {
 		t.Fatal("item was not added")
 	}
 	item := m.localCart.Items[0]
-	if item.ProductID != 101 || item.VariationID != 1012 || item.GrindSize != "Espresso" || item.PriceMinor != 4999 {
+	if item.ProductID != 101 || item.VariationID != 1012 || item.GrindSize != "Espresso" || item.PriceMinor != 4999 || item.Quantity != 2 {
 		t.Fatalf("wrong cart item: %+v", item)
 	}
-	m.viewState = ViewConfigurator
-	old := m.configForm
-	press(t, &m, tea.KeyEscape)
-	press(t, &m, 'c')
-	if m.configForm == nil || m.configForm == old || m.configCompleted || m.selectedVariation != nil || m.selectedGrindSize != "" {
-		t.Fatal("configuration wasn't reset on re-entry")
+	press(t, &m, 's')
+	if m.viewState != ViewProductList || m.selectedVariation.ID != 1012 || m.selectedGrindSize != "Espresso" || m.selectedQuantity != 2 {
+		t.Fatal("return to shop lost the draft")
 	}
-	press(t, &m, tea.KeyEscape)
-	press(t, &m, tea.KeyEscape)
-	m.products = []woo.Product{{ID: 2, Type: "simple"}}
-	m.updateProductList()
-	press(t, &m, tea.KeyEnter)
-	if m.configForm != nil || len(m.productVariations) != 0 {
-		t.Fatal("obsolete configuration retained for another product")
+	p := woo.Product{ID: 2, Name: "Other coffee", Type: "simple", StockStatus: "instock"}
+	products := append(append([]woo.Product{}, m.products...), p)
+	sendMessage(t, &m, productsLoadedMsg{products})
+	press(t, &m, tea.KeyDown)
+	if m.selectedProduct.ID != 2 || m.selectedVariation != nil || len(m.productVariations) != 0 || m.selectedGrindSize != "" || m.selectedQuantity != 1 {
+		t.Fatal("obsolete options retained for another product")
+	}
+	press(t, &m, tea.KeyUp)
+	if m.selectedVariation.ID != 1012 || m.selectedGrindSize != "Espresso" || m.selectedQuantity != 2 {
+		t.Fatal("browsing lost product draft")
 	}
 }
 
 func TestInvalidVariationSelection(t *testing.T) {
-	for _, id := range []int{0, 9999} {
+	for _, id := range []int{9999, 1012} {
 		t.Run(strconv.Itoa(id), func(t *testing.T) {
 			m := variableModel(t)
-			m.configForm = huh.NewForm(huh.NewGroup(huh.NewSelect[int]().Key("variation_id").Options(huh.NewOption("Invalid", id))))
+			draft := m.productDrafts[101]
+			draft.variationID = id
+			m.productDrafts[101] = draft
+			variations := m.productVariations[:1]
+			sendMessage(t, &m, variationsLoadedMsg{requestID: m.variationRequest, productID: 101, variations: variations})
 			if err := m.addToCart(); err == nil || !m.localCart.IsEmpty() || m.selectedVariation != nil {
-				t.Fatal("invalid variation accepted")
+				t.Fatal("invalid/refreshed-away variation accepted")
 			}
 		})
 	}
 	m := variableModel(t)
-	m.productVariations = nil
-	cmd := m.initConfigurator()
-	if cmd != nil || m.err == nil || m.configForm != nil {
+	sendMessage(t, &m, variationsLoadedMsg{requestID: m.variationRequest, productID: 101})
+	if err := m.addToCart(); err == nil {
 		t.Fatal("missing variation metadata accepted")
 	}
 }
 
 func TestSimpleGrindSelection(t *testing.T) {
-	m, server := setupTestModel(t, nil, nil)
+	products := []woo.Product{{ID: 1, Type: "simple", StockStatus: "instock", Attributes: []woo.Attribute{{Name: "Grind Size", Options: []string{"Beans", "Espresso"}}}}}
+	m, server := setupTestModel(t, products, nil)
 	defer server.Close()
-	m.selectedProduct = &woo.Product{ID: 1, Type: "simple", Attributes: []woo.Attribute{{Name: "Grind Size", Options: []string{"Beans", "Espresso"}}}}
-	m.viewState = ViewProductDetails
-	press(t, &m, 'c')
-	press(t, &m, tea.KeyDown)
-	press(t, &m, tea.KeyEnter)
-	if !m.configCompleted || m.selectedGrindSize != "Espresso" {
-		t.Fatal("simple grind result lost")
+	sendMessage(t, &m, m.loadProducts()())
+	press(t, &m, tea.KeyRight)
+	if m.shopFocus != "grind" || m.selectedGrindSize != "Espresso" {
+		t.Fatal("inline grind selection failed")
 	}
 	press(t, &m, 'a')
 	if m.localCart.Items[0].GrindSize != "Espresso" {
@@ -171,7 +171,7 @@ func TestAddressValidationAsyncCompletionAndReentry(t *testing.T) {
 	if !strings.Contains(m.addressForm.View(), "first name is required") || m.viewState != ViewAddress {
 		t.Fatal("required field validation lost")
 	}
-	for _, value := range []string{"Ada", "Lovelace", "ada@example.com", "Via Roma 1", "Rome", "00100", "IT", "RM", "+39061234567"} {
+	for _, value := range []string{"Ada", "Lovelace", "ada@example.com", "Via Roma 1", "Rome", "IT", "00100", "RM", "+39061234567"} {
 		if value == "ada@example.com" {
 			sendMessage(t, &m, tea.PasteMsg{Content: "invalid"})
 			press(t, &m, tea.KeyEnter)
@@ -180,26 +180,23 @@ func TestAddressValidationAsyncCompletionAndReentry(t *testing.T) {
 			}
 			sendMessage(t, &m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
 		}
+		if value == "IT" {
+			sendMessage(t, &m, tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl})
+		}
 		sendMessage(t, &m, tea.PasteMsg{Content: value})
 		press(t, &m, tea.KeyEnter)
 	}
-	// Confirm defaults to No, which must fail validation.
-	press(t, &m, tea.KeyEnter)
-	if m.viewState != ViewAddress {
-		t.Fatal("unconfirmed address accepted")
-	}
-	press(t, &m, 'y')
-	press(t, &m, tea.KeyEnter)
-	if m.viewState != ViewReview || !m.customerInfo.AddressConfirmed || m.customerInfo.Email != "ada@example.com" {
+	if m.viewState != ViewReview || m.customerInfo.Email != "ada@example.com" {
 		t.Fatalf("async completion failed: view=%v info=%+v", m.viewState, m.customerInfo)
 	}
+
 	old := m.addressForm
 	sendMessage(t, &m, tea.FocusMsg{})
 	if m.viewState != ViewReview {
 		t.Fatal("completion transitioned twice")
 	}
 	press(t, &m, tea.KeyEscape)
-	if m.viewState != ViewAddress || m.addressForm == old || m.addressForm.State != huh.StateNormal || m.customerInfo.AddressConfirmed {
+	if m.viewState != ViewAddress || m.addressForm == old || m.addressForm.State != huh.StateNormal {
 		t.Fatal("address form not reset on re-entry")
 	}
 	press(t, &m, tea.KeyEscape)

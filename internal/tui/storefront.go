@@ -2,11 +2,11 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 
@@ -20,10 +20,15 @@ type catalogTickMsg struct{}
 type storefrontMsg struct{ state storefront.SessionState }
 type paymentPollMsg struct{}
 type preparedMsg struct {
-	quote storeapi.Quote
-	err   error
+	quote       storeapi.Quote
+	err         error
+	fromAddress bool
 }
-type shippingCompleteMsg struct{}
+type shippingCompleteMsg struct{ err error }
+type couponCompleteMsg struct{ err error }
+type paymentActionMsg struct{ err error }
+type catalogErrorMsg struct{ err error }
+type cartSyncMsg struct{ err error }
 
 func NewStorefrontModel(ctx context.Context, catalog *storefront.Catalog, shopper *storefront.Session, enabled bool) Model {
 	m := NewModel(nil, cache.New[ProductListCacheKey, []woo.Product](time.Minute), cache.New[int, []woo.Variation](time.Minute))
@@ -59,7 +64,7 @@ func (m Model) waitShopper() tea.Cmd {
 
 func (m *Model) applyShopper(st storefront.SessionState) {
 	m.sessionState = st
-	if m.viewState != ViewAddress {
+	if !m.addressDraft {
 		a := st.Cart.BillingAddress
 		if st.Billing != nil {
 			a = *st.Billing
@@ -75,8 +80,11 @@ func (m *Model) applyShopper(st storefront.SessionState) {
 	if selected >= len(st.Desired) {
 		m.localCart.SelectedIdx = max(0, len(st.Desired)-1)
 	}
-	if st.Error != "" {
-		m.err = fmt.Errorf("%s", st.Error)
+	if m.customerInfo.Country == "" {
+		m.customerInfo.Country = "IT"
+	}
+	if st.Attempt != nil && !st.Attempt.Active() {
+		m.confirmCancel = false
 	}
 }
 
@@ -84,9 +92,9 @@ func (m Model) refreshCatalog() tea.Cmd {
 	return func() tea.Msg {
 		err := m.catalog.Refresh(m.ctx)
 		if err != nil {
-			return errMsg{err}
+			return catalogErrorMsg{err}
 		}
-		return productsLoadedMsg{mapStoreProductsToWoo(m.catalog.Products(m.searchInput.Value(), m.inStockOnly))}
+		return productsLoadedMsg{mapStoreProductsToWoo(m.catalog.Products("", false))}
 	}
 }
 
@@ -109,7 +117,7 @@ func storeRange(p storeapi.ProductPrices) string {
 
 func (m Model) address() storeapi.CustomerAddress {
 	info := *m.customerInfo
-	country := strings.ToUpper(info.Country)
+	country := strings.ToUpper(strings.TrimSpace(info.Country))
 	if country == "" {
 		country = "IT"
 	}
@@ -120,13 +128,29 @@ func (m Model) prepareReview() tea.Cmd {
 	address := m.address()
 	return func() tea.Msg {
 		if err := m.shopper.Address(m.ctx, address, address); err != nil {
-			return preparedMsg{err: err}
+			return preparedMsg{err: err, fromAddress: true}
 		}
+		state := m.shopper.Snapshot()
+		for _, pack := range state.Cart.ShippingRates {
+			if len(pack.ShippingRates) > 1 {
+				return preparedMsg{fromAddress: true}
+			}
+		}
+		if err := m.shopper.Prepare(m.ctx); err != nil {
+			return preparedMsg{err: err, fromAddress: true}
+		}
+		quote, err := storefront.QuoteFromCart(m.shopper.Snapshot().Cart)
+		return preparedMsg{quote: quote, err: err, fromAddress: true}
+	}
+}
+
+func (m Model) prepareQuote() tea.Cmd {
+	return func() tea.Msg {
 		if err := m.shopper.Prepare(m.ctx); err != nil {
 			return preparedMsg{err: err}
 		}
 		quote, err := storefront.QuoteFromCart(m.shopper.Snapshot().Cart)
-		return preparedMsg{quote, err}
+		return preparedMsg{quote: quote, err: err}
 	}
 }
 
@@ -163,81 +187,24 @@ func (m Model) pollPayment() tea.Cmd {
 }
 
 func (m Model) cancelPayment() tea.Cmd {
-	return func() tea.Msg {
-		if err := m.shopper.Cancel(m.ctx); err != nil {
-			return errMsg{err}
-		}
-		return preparedMsg{}
-	}
+	return func() tea.Msg { return paymentActionMsg{m.shopper.Cancel(m.ctx)} }
 }
 
-func (m Model) handleSyncedCartKeys(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-	if m.couponMode != "" {
-		switch key {
-		case "esc":
-			m.couponMode = ""
-			return m, nil
-		case "enter":
-			code, remove := m.cartInput.Value(), m.couponMode == "remove"
-			m.couponMode = ""
-			return m, func() tea.Msg {
-				if err := m.shopper.Coupon(m.ctx, code, remove); err != nil {
-					return errMsg{err}
-				}
-				return preparedMsg{}
-			}
+func (m Model) recheckPayment() tea.Cmd {
+	return func() tea.Msg { return paymentActionMsg{m.shopper.Recover(m.ctx)} }
+}
+
+func (m Model) submitCoupon(code string, remove bool) tea.Cmd {
+	return func() tea.Msg { return couponCompleteMsg{m.shopper.Coupon(m.ctx, code, remove)} }
+}
+
+func (m Model) hasDeliveryChoice() bool {
+	for _, pack := range m.sessionState.Cart.ShippingRates {
+		if len(pack.ShippingRates) > 1 {
+			return true
 		}
-		var cmd tea.Cmd
-		m.cartInput, cmd = m.cartInput.Update(msg)
-		return m, cmd
 	}
-	switch key {
-	case "esc", "backspace", "s":
-		m.viewState = ViewProductList
-	case "up", "k":
-		m.localCart.MoveUp()
-	case "down", "j":
-		m.localCart.MoveDown()
-	case "+", "=", "-", "d", "delete":
-		if item := m.localCart.GetSelectedItem(); item != nil {
-			delta := 0
-			switch key {
-			case "+", "=":
-				delta = 1
-			case "-":
-				delta = -1
-			}
-			if delta != 0 {
-				m.err = m.shopper.AdjustQuantity(item.ProductID, item.GrindSize, delta)
-			} else {
-				m.err = m.shopper.SetQuantity(item.ProductID, item.GrindSize, 0)
-			}
-			m.applyShopper(m.shopper.Snapshot())
-		}
-	case "o":
-		if a := m.sessionState.Attempt; a != nil && a.Active() {
-			m.viewState = ViewOrderConfirmation
-			return m, nil
-		}
-		if len(m.sessionState.Desired) > 0 {
-			m.viewState = ViewAddress
-			return m, m.initAddressForm()
-		}
-	case "c", "u":
-		m.couponMode = "apply"
-		if key == "u" {
-			m.couponMode = "remove"
-		}
-		m.cartInput = textinput.New()
-		m.cartInput.Placeholder = "Coupon code"
-		return m, m.cartInput.Focus()
-	case "h":
-		return m, m.initShipping()
-	case "x":
-		return m, m.cancelPayment()
-	}
-	return m, nil
+	return false
 }
 
 func (m *Model) initShipping() tea.Cmd {
@@ -259,19 +226,27 @@ func (m *Model) initShipping() tea.Cmd {
 		m.err = fmt.Errorf("enter a complete address to load shipping rates")
 		return nil
 	}
-	m.shippingForm = huh.NewForm(huh.NewGroup(fields...))
+	if m.viewState != ViewShipping {
+		m.shippingReturn = m.viewState
+	}
+	groups := make([]*huh.Group, 0, len(fields))
+	for _, field := range fields {
+		groups = append(groups, huh.NewGroup(field))
+	}
+	m.shippingForm = huh.NewForm(groups...)
+	m.styleForm(m.shippingForm)
 	m.viewState = ViewShipping
 	return m.shippingForm.Init()
 }
 
-func (m Model) updateShipping(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyPressMsg); ok && key.String() == "esc" {
-		m.viewState = ViewCart
+func (m Model) updateShipping(msg tea.Msg) (Model, tea.Cmd) {
+	if m.shippingForm == nil || m.shippingBusy {
 		return m, nil
 	}
 	form, cmd := m.shippingForm.Update(msg)
 	m.shippingForm = form.(*huh.Form)
 	if m.shippingForm.State == huh.StateCompleted {
+		m.shippingBusy, m.err = true, nil
 		rates := []storeapi.SelectShippingRateRequest{}
 		for _, pack := range m.sessionState.Cart.ShippingRates {
 			if value := m.shippingForm.GetString(fmt.Sprint(pack.PackageID)); value != "" {
@@ -281,7 +256,7 @@ func (m Model) updateShipping(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			for _, rate := range rates {
 				if err := m.shopper.Shipping(m.ctx, rate.PackageID, rate.RateID); err != nil {
-					return errMsg{err}
+					return shippingCompleteMsg{err}
 				}
 			}
 			return shippingCompleteMsg{}
@@ -295,47 +270,40 @@ func (m Model) money(raw string) string {
 	return t.CurrencyCode + " " + storeapi.FormatMinor(raw, t.CurrencyMinorUnit)
 }
 
-func (m Model) viewWooCart(review bool) string {
+// Cart content scrolls independently of the totals and checkout controls.
+func (m Model) cartContent(review bool) string {
 	var b strings.Builder
-	if review {
-		b.WriteString("Review WooCommerce quote\n\n")
-	} else {
-		b.WriteString("Shopping cart\n\n")
-	}
-	if len(m.sessionState.Desired) == 0 {
-		b.WriteString("Your cart is empty\n")
-	}
 	if review {
 		a := m.sessionState.Cart.ShippingAddress
 		fmt.Fprintf(&b, "Deliver to: %s %s\n%s\n%s %s %s %s\n", a.FirstName, a.LastName, a.Address1, a.Postcode, a.City, a.State, a.Country)
-		fmt.Fprintf(&b, "Billing contact: %s · %s\n\n", m.sessionState.Cart.BillingAddress.Email, m.sessionState.Cart.BillingAddress.Phone)
+		fmt.Fprintf(&b, "Contact: %s · %s\n", m.sessionState.Cart.BillingAddress.Email, m.sessionState.Cart.BillingAddress.Phone)
 	}
-	for i, item := range m.sessionState.Desired {
+	if m.localCart.IsEmpty() {
+		b.WriteString("Your cart is empty. Press s to browse coffee.\n")
+	}
+	for i, item := range m.localCart.Items {
 		prefix := "  "
-		if i == m.localCart.SelectedIdx {
-			prefix = "▸ "
+		if i == m.localCart.SelectedIdx && !review {
+			prefix = "> "
 		}
-		fmt.Fprintf(&b, "%s%s · %s × %d\n", prefix, item.Name, item.Grind, item.Quantity)
+		fmt.Fprintf(&b, "%s%s\n  %s × %d", prefix, item.Name, item.GrindSize, item.Quantity)
+		id := item.ProductID
+		if item.VariationID != 0 {
+			id = item.VariationID
+		}
 		for _, confirmed := range m.sessionState.Cart.Items {
-			if confirmed.ID == item.ID && confirmed.Quantity == item.Quantity {
+			var ext struct {
+				Grind string `json:"grind"`
+			}
+			_ = json.Unmarshal(confirmed.Extensions["eva_terminal"], &ext)
+			if confirmed.ID == id && ext.Grind == item.GrindSize && confirmed.Quantity == item.Quantity {
 				if confirmed.Totals.LineTotal != "" {
-					fmt.Fprintf(&b, "    Woo line total: %s\n", m.money(confirmed.Totals.LineTotal))
+					fmt.Fprintf(&b, " · %s", m.money(confirmed.Totals.LineTotal))
 				}
 				break
 			}
 		}
-	}
-	if m.sessionState.Pending {
-		b.WriteString("\nSynchronizing changes with WooCommerce…\n")
-	}
-	for _, issue := range m.sessionState.Cart.Errors {
-		fmt.Fprintf(&b, "\n%s\n", StripHTML(issue.Message))
-	}
-	t := m.sessionState.Cart.Totals
-	for _, row := range []struct{ name, amount string }{{"Items", t.TotalItems}, {"Discount", t.TotalDiscount}, {"Shipping", t.TotalShipping}, {"Fees", t.TotalFees}, {"Tax", t.TotalTax}, {"Total", t.TotalPrice}} {
-		if row.amount != "" {
-			fmt.Fprintf(&b, "%s: %s\n", row.name, m.money(row.amount))
-		}
+		b.WriteString("\n")
 	}
 	for _, coupon := range m.sessionState.Cart.Coupons {
 		fmt.Fprintf(&b, "Coupon: %s\n", coupon.Code)
@@ -343,44 +311,73 @@ func (m Model) viewWooCart(review bool) string {
 	for _, pack := range m.sessionState.Cart.ShippingRates {
 		for _, rate := range pack.ShippingRates {
 			if rate.Selected {
-				fmt.Fprintf(&b, "%s: %s\n", pack.Name, rate.Name)
+				fmt.Fprintf(&b, "Delivery: %s\n", rate.Name)
 			}
 		}
 	}
-	if m.preparing {
-		b.WriteString("\nValidating address and preparing quote…")
-	}
-	if m.creatingOrder {
-		b.WriteString("\nSubmitting checkout…")
-	}
-	if m.err != nil {
-		fmt.Fprintf(&b, "\n%s\n", m.err)
-	}
-	if m.couponMode != "" {
-		fmt.Fprintf(&b, "\n%s coupon: %s", m.couponMode, m.cartInput.View())
+	for _, issue := range m.sessionState.Cart.Errors {
+		fmt.Fprintf(&b, "Attention: %s\n", StripHTML(issue.Message))
 	}
 	if review {
-		b.WriteString("\nCard / eligible Apple Pay or Google Pay on Stripe\nenter confirm • esc edit address • h shipping • c cart")
-	} else {
-		b.WriteString("\n↑/↓ select • +/- quantity • d delete • c coupon • u remove coupon • h shipping • o checkout • x cancel payment • s browse")
+		b.WriteString("Pay by card or eligible Apple Pay / Google Pay.\nConfirm this total to create your payment link.")
 	}
-	return m.styles.Box.Render(b.String())
+	return b.String()
 }
 
-func (m Model) viewPayment() string {
+func (m Model) paymentSummary() string {
 	a := m.sessionState.Attempt
 	if a == nil {
 		return "No active payment"
 	}
-	text := fmt.Sprintf("Order #%d\nPayment: %s\n%s %s\n", a.OrderID, a.PaymentState, a.Currency, storeapi.FormatMinor(a.Total, 2))
-	if a.PaymentURL != "" && a.Active() {
-		text += "\nOpen in your browser:\n" + a.PaymentURL + "\nExpires: " + time.Unix(a.ExpiresAt, 0).Format(time.RFC3339) + "\n"
+	label := "Checking payment"
+	switch a.PaymentState {
+	case "paid":
+		label = "Paid · payment confirmed"
+	case "cancelled":
+		label = "Cancelled · cart available"
+	case "expired":
+		label = "Link expired · checkout again"
+	case "failed":
+		label = "Payment failed · checkout again"
+	case "submitting":
+		label = "Creating payment link"
+	case "resolving":
+		label = "Confirming checkout outcome"
+	case "pending", "unpaid", "pending_payment", "awaiting_payment":
+		label = "Awaiting payment confirmation"
+	}
+	order := fmt.Sprintf("Order #%d", a.OrderID)
+	if a.OrderID == 0 {
+		order = "Order being confirmed"
+	}
+	remaining := ""
+	if a.Active() && a.ExpiresAt > 0 {
+		remaining = "Time remaining: " + max(time.Duration(0), time.Until(time.Unix(a.ExpiresAt, 0))).Round(time.Second).String()
+	}
+	return fmt.Sprintf("%s · %s %s\n%s\n%s", order, a.Currency, storeapi.FormatMinor(a.Total, 2), label, remaining)
+}
+
+func (m Model) paymentContent() string {
+	a := m.sessionState.Attempt
+	if a == nil {
+		return "Press Esc to continue shopping."
+	}
+	if m.confirmCancel {
+		return "Cancel this unpaid payment?\nThe payment link will close and the cart will unlock.\nIf payment has already completed, it stays confirmed.\n\nEnter confirms cancellation. Esc keeps the payment open."
 	}
 	if a.PaymentState == "paid" {
-		text += "\nPayment confirmed by WooCommerce.\n"
+		return "Payment confirmed by the store. Thank you!\nPress Enter to continue shopping."
 	}
-	if m.err != nil {
-		text += "\n" + m.err.Error() + "\n"
+	if !a.Active() {
+		return "Your saved cart is available. Press c to review it,\nor Enter to continue shopping."
 	}
-	return m.styles.Box.Render(text + "\nenter browse • x cancel unpaid payment")
+	if a.PaymentURL == "" {
+		return "The store is confirming your checkout.\nUse r to check again. You can also browse and return with o."
+	}
+	text := "Open this full link in your browser:\n" + a.PaymentURL
+	if a.ExpiresAt > 0 {
+		remaining := max(time.Duration(0), time.Until(time.Unix(a.ExpiresAt, 0)))
+		text += fmt.Sprintf("\nTime remaining: %s\n", remaining.Round(time.Second))
+	}
+	return text + "\nWaiting for store confirmation. Browser returns do not confirm payment.\nUse y to request copying the link, or copy it manually.\nUse r to recheck payment status."
 }
