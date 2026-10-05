@@ -205,7 +205,7 @@ make gateway-integration # Native Woo checkout and simulated Stripe checks
 
 # Build
 make build          # Build binaries
-make gateway-build  # Build dist/eva-terminal-gateway.zip
+make gateway-build  # Build dist/eva-terminal-gateway-<version>.zip
 make clean          # Clean build artifacts
 ```
 
