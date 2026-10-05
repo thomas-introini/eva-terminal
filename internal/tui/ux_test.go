@@ -37,8 +37,147 @@ func uxModel() Model {
 	return m
 }
 
+func TestSplashLifecycle(t *testing.T) {
+	m := uxModel()
+	m.splash = true
+	m.viewState = ViewOrderConfirmation
+	m.noColor = false
+	m.profile = colorprofile.TrueColor
+	m.applyTheme()
+	// Deliver messages without running background subscriptions or real timers.
+	update := func(msg tea.Msg) tea.Cmd {
+		updated, cmd := m.Update(msg)
+		m = updated.(Model)
+		return cmd
+	}
+	if m.View().Content != "Loading..." || !m.splashStarted.IsZero() {
+		t.Fatal("splash started before terminal dimensions arrived")
+	}
+	update(tea.WindowSizeMsg{})
+	if !m.splashStarted.IsZero() {
+		t.Fatal("empty dimensions started the splash")
+	}
+	if cmd := update(tea.WindowSizeMsg{Width: 80, Height: 24}); cmd == nil || m.splashStarted.IsZero() {
+		t.Fatal("valid dimensions did not schedule the splash")
+	}
+	started := m.splashStarted
+	for _, key := range []rune{'c', 'o', 'a', '/', '?', tea.KeyEnter, tea.KeyEscape} {
+		if cmd := update(tea.KeyPressMsg{Code: key}); cmd != nil || m.viewState != ViewOrderConfirmation || m.showSearch || m.showHelp {
+			t.Fatal("splash accepted a shopping action")
+		}
+	}
+	m.viewState, m.showSearch = ViewProductList, true
+	update(tea.PasteMsg{Content: "hidden input"})
+	if m.searchInput.Value() != "" {
+		t.Fatal("splash accepted pasted input")
+	}
+	m.viewState, m.showSearch = ViewOrderConfirmation, false
+	for _, key := range []tea.KeyPressMsg{{Code: 'q', Text: "q"}, {Code: 'c', Mod: tea.ModCtrl}} {
+		cmd := update(key)
+		if cmd == nil {
+			t.Fatal("splash blocked quitting")
+		}
+		if _, ok := cmd().(tea.QuitMsg); !ok {
+			t.Fatal("splash did not issue quit")
+		}
+	}
+	state := m.sessionState
+	state.Attempt = &storeapi.Attempt{OrderID: 42, PaymentState: "paid", Currency: "EUR", Total: "2400"}
+	state.Desired = []storefront.Intent{{ID: 1, Name: "Restored coffee", Quantity: 2}}
+	update(storefrontMsg{state})
+	update(productsLoadedMsg{[]woo.Product{{ID: 1, Name: "Loaded coffee", Type: "simple", StockStatus: "instock"}}})
+	update(tea.BackgroundColorMsg{Color: color.White})
+	if m.sessionState.Attempt.PaymentState != "paid" || m.localCart.Items[0].Quantity != 2 || m.loadingProducts || m.products[0].Name != "Loaded coffee" || m.dark {
+		t.Fatal("splash blocked background updates")
+	}
+	update(tea.WindowSizeMsg{Width: 40, Height: 12})
+	if !strings.Contains(m.View().Content, "Resize to at least") {
+		t.Fatal("splash hid resize guidance")
+	}
+	update(tea.WindowSizeMsg{Width: 120, Height: 36})
+	if m.splashStarted != started {
+		t.Fatal("resizing restarted the splash")
+	}
+	shape := ansi.Strip(m.splashText())
+	frames := map[string]bool{m.splashText(): true}
+	for elapsed := splashInterval; elapsed < splashDuration; elapsed += splashInterval {
+		cmd := update(splashTickMsg(started.Add(elapsed)))
+		if !m.splash || cmd == nil || ansi.Strip(m.splashText()) != shape {
+			t.Fatal("pulse ended early or moved the logo")
+		}
+		frames[m.splashText()] = true
+	}
+	if len(frames) != 3 {
+		t.Fatal("orange dot did not change brightness")
+	}
+	update(splashTickMsg(started.Add(time.Second - time.Millisecond)))
+	if !m.splash {
+		t.Fatal("splash ended before one second")
+	}
+	if cmd := update(splashTickMsg(started.Add(time.Second))); m.splash || cmd != nil || m.viewState != ViewOrderConfirmation || !strings.Contains(m.View().Content, "Paid · payment confirmed") {
+		t.Fatal("splash did not reveal the updated payment screen at one second")
+	}
+	if cmd := update(splashTickMsg(started.Add(2 * time.Second))); cmd != nil {
+		t.Fatal("dismissed splash kept ticking")
+	}
+	update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	update(tea.KeyPressMsg{Code: 'c', Text: "c"})
+	if m.splash || m.viewState != ViewCart {
+		t.Fatal("splash replayed or input stayed blocked")
+	}
+}
+
+func TestSplashRendering(t *testing.T) {
+	m := uxModel()
+	m.splash = true
+	logoLines := strings.Split(splashLogo, "\n")
+	for _, size := range [][2]int{{60, 18}, {80, 24}, {120, 36}} {
+		m.width, m.height = size[0], size[1]
+		view := m.View()
+		lines := strings.Split(ansi.Strip(view.Content), "\n")
+		if !view.AltScreen || len(lines) != size[1] {
+			t.Fatal("splash did not fill the alternate screen")
+		}
+		for _, line := range lines {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatal("splash exceeded the terminal width")
+			}
+		}
+		top, left := (size[1]-len(logoLines))/2, (size[0]-48)/2
+		for i, line := range logoLines {
+			if strings.TrimRight(lines[top+i], " ") != strings.Repeat(" ", left)+line {
+				t.Fatalf("logo was not centered at %dx%d:\n%s", size[0], size[1], view.Content)
+			}
+		}
+		for _, character := range ansi.Strip(view.Content) {
+			if character > 127 {
+				t.Fatal("splash contains non-ASCII characters")
+			}
+		}
+	}
+	for _, dark := range []bool{true, false} {
+		for _, profile := range []colorprofile.Profile{colorprofile.TrueColor, colorprofile.ANSI256, colorprofile.ANSI, colorprofile.Ascii} {
+			for _, noColor := range []bool{false, true} {
+				m.dark, m.profile, m.noColor = dark, profile, noColor
+				m.applyTheme()
+				m.splashFrame = 0
+				dim := m.splashText()
+				m.splashFrame = 2
+				bright := m.splashText()
+				if noColor || profile == colorprofile.Ascii {
+					if dim != bright || strings.Contains(dim, "\x1b") {
+						t.Fatal("monochrome splash emitted color or animation")
+					}
+				} else if profile == colorprofile.TrueColor && dim == bright {
+					t.Fatal("true-color dot did not pulse")
+				}
+			}
+		}
+	}
+}
+
 func TestEveryScreenFitsAndKeepsActions(t *testing.T) {
-	for _, size := range [][2]int{{60, 18}, {80, 24}, {120, 36}, {40, 12}} {
+	for _, size := range [][2]int{{60, 18}, {80, 24}, {120, 36}, {120, 50}, {40, 12}} {
 		for state := ViewProductList; state <= ViewShipping; state++ {
 			t.Run(fmt.Sprintf("%dx%d/%d", size[0], size[1], state), func(t *testing.T) {
 				m := uxModel()
@@ -84,6 +223,21 @@ func TestEveryScreenFitsAndKeepsActions(t *testing.T) {
 		}
 	}
 }
+
+func TestCompactLogoHeadroom(t *testing.T) {
+	m := uxModel()
+	for _, size := range [][2]int{{79, 23}, {79, 24}, {80, 24}, {120, 36}, {79, 39}, {79, 40}, {120, 50}, {80, 24}} {
+		sendMessage(t, &m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		checkBounds(t, m, size)
+		text := ansi.Strip(m.View().Content)
+		smallVisible := strings.Contains(text, "##oo  ###. ## ##")
+		largeVisible := strings.Contains(text, ".###ooo    #######. .###   ####.")
+		if smallVisible != (size[1] >= 24 && size[1] < 40) || largeVisible != (size[1] >= 40) || m.viewState != ViewProductList {
+			t.Fatal("resizing lost the logo or shopping screen")
+		}
+	}
+}
+
 func checkBounds(t *testing.T, m Model, size [2]int) {
 	t.Helper()
 	view := m.View().Content
@@ -102,21 +256,37 @@ func checkBounds(t *testing.T, m Model, size [2]int) {
 		if !strings.HasPrefix(lines[top], strings.Repeat(" ", left)+"┌") || ansi.StringWidth(strings.TrimSpace(lines[top])) != pw {
 			t.Fatalf("panel not centered at (%d,%d):\n%s", left, top, view)
 		}
+		if top >= 3 {
+			art, width := smallLogo, 16
+			if top >= 6 {
+				art, width = compactLogo, 32
+			}
+			logoLines := strings.Split(art, "\n")
+			logoTop, logoLeft := (top-len(logoLines))/2, (size[0]-width)/2
+			for i, line := range logoLines {
+				if strings.TrimRight(lines[logoTop+i], " ") != strings.Repeat(" ", logoLeft)+line {
+					t.Fatalf("compact logo not centered above the panel:\n%s", view)
+				}
+			}
+		}
 	}
 }
 
 func TestCenteredShopLayouts(t *testing.T) {
 	m := variableModel(t)
-	m.products[0].Name = "House Blend"
+	m.products[0].Name = "House Blend Signature"
 	m.products[0].Description = "Smooth and balanced coffee with notes of chocolate, caramel, and roasted nuts. Choose your bag size and grind before adding it to your cart."
 	m.products = append(m.products, woo.Product{ID: 2, Name: "Ethiopian Yirgacheffe", Type: "simple", StockStatus: "instock"}, woo.Product{ID: 3, Name: "Colombian Supremo", Type: "simple", StockStatus: "instock"})
 	drainCommands(t, &m, m.updateProductList())
 	m.sessionState.Cart.Totals = storeapi.CartTotals{CurrencyCode: "EUR", CurrencyMinorUnit: 2, TotalPrice: "0"}
-	for _, size := range [][2]int{{60, 18}, {80, 24}, {120, 36}} {
+	for _, size := range [][2]int{{60, 18}, {79, 24}, {80, 18}, {80, 24}, {120, 36}, {120, 50}} {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
 			sendMessage(t, &m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 			checkBounds(t, m, size)
 			view := ansi.Strip(m.View().Content)
+			if !strings.Contains(ansi.Strip(m.productList.View()), "House Blend Signature") {
+				t.Fatalf("coffee name clipped in the product list:\n%s", view)
+			}
 			for _, text := range []string{"s shop", "c cart EUR 0.00 [0]", "Size: < 250g >", "Grind: < Whole Beans >", "Qty: < 1 >", "[ Add to cart ]", "enter add to cart", "↑/↓ coffees", "←/→ change option"} {
 				if !strings.Contains(view, text) {
 					t.Fatalf("missing %q:\n%s", text, view)

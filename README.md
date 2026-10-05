@@ -60,7 +60,9 @@ In another terminal:
 ssh -p 23234 localhost
 ```
 
-You'll see the coffee product browser with:
+Each connection briefly shows a centered ASCII EVA logo for one second, with a gently pulsing orange dot. Monochrome terminals and `NO_COLOR` show a static logo. The storefront loads in parallel, and reconnecting resumes any pending payment after the splash.
+
+You'll then see the coffee product browser with:
 - Product list (name, price, stock status)
 - Product details view
 - Variable product configuration (size + grind selection)
@@ -132,7 +134,7 @@ make docker-seed    # Re-seed products
 
 Shopping follows **Address → Delivery → Review → Payment**, with Delivery omitted when unnecessary. Required address fields are marked `*`; the country starts at Italy (`IT`). Review confirms the address and current store-calculated total. A changed quote requires another explicit confirmation. Adding coffee still opens the cart.
 
-All screens use a panel centered horizontally and vertically, capped at 100 columns × 28 rows. Its segmented header shows EVA, shop, and the cart’s confirmed total and quantity. At 80 columns and wider, products appear beside the selected coffee’s details and inline options; narrower supported terminals stack these sections. Choices stay with each product while browsing and returning from the cart. The UI supports 60×18 and larger terminals. Smaller terminals show a resize message and preserve shopping state. Long content scrolls while totals and primary controls stay visible. Cart changes show “totals updating”; checkout waits for synchronization and validation. Pending payments lock cart edits and remain available through `o` or reconnect.
+All screens use a panel centered horizontally and vertically, capped at 100 columns × 28 rows. At 24 rows and taller, an ASCII EVA logo with a steady orange dot sits in the space above the panel; it doubles to 32×6 characters at 40 rows and taller. Its segmented header shows EVA, shop, and the cart’s confirmed total and quantity. At 80 columns and wider, products appear beside the selected coffee’s details and inline options; narrower supported terminals stack these sections. Choices stay with each product while browsing and returning from the cart. The UI supports 60×18 and larger terminals. Smaller terminals show a resize message and preserve shopping state. Long content scrolls while totals and primary controls stay visible. Cart changes show “totals updating”; checkout waits for synchronization and validation. Pending payments lock cart edits and remain available through `o` or reconnect.
 
 Payment instructions stay open until explicit navigation. The order number, amount, confirmation status, and link time remaining remain visible. Clipboard copying uses the terminal's OSC 52 support; “Copy requested” reports the request, and the full URL remains accessible for manual copying. The coffee theme adapts to the terminal background and color capability and respects `NO_COLOR`.
 

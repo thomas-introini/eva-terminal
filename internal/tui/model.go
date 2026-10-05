@@ -82,10 +82,13 @@ type Model struct {
 	variationsCache *cache.Cache[int, []woo.Variation]
 
 	// View state
-	viewState ViewState
-	width     int
-	height    int
-	styles    Styles
+	viewState     ViewState
+	width         int
+	height        int
+	styles        Styles
+	splash        bool
+	splashStarted time.Time
+	splashFrame   int
 
 	// Product list view
 	productList     list.Model
@@ -164,6 +167,13 @@ func (i productItem) FilterValue() string {
 }
 
 // Messages
+const (
+	splashDuration = time.Second
+	splashInterval = 100 * time.Millisecond
+)
+
+type splashTickMsg time.Time
+
 type (
 	productsLoadedMsg struct {
 		products []woo.Product
@@ -257,6 +267,10 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
+func tickSplash(delay time.Duration) tea.Cmd {
+	return tea.Tick(delay, func(now time.Time) tea.Msg { return splashTickMsg(now) })
+}
+
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -264,6 +278,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.sizeComponents()
+		if m.splash && m.splashStarted.IsZero() && m.width > 0 && m.height > 0 {
+			m.splashStarted = time.Now()
+			cmds = append(cmds, tickSplash(splashInterval))
+		}
+	case splashTickMsg:
+		if !m.splash || m.splashStarted.IsZero() {
+			return m, nil
+		}
+		elapsed := time.Time(msg).Sub(m.splashStarted)
+		if elapsed >= splashDuration {
+			m.splash = false
+			return m, nil
+		}
+		m.splashFrame = int(elapsed / splashInterval)
+		return m, tickSplash(min(splashInterval, splashDuration-elapsed))
 	case tea.BackgroundColorMsg:
 		m.dark = msg.IsDark()
 		m.applyTheme()
@@ -422,7 +451,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateActiveComponent(msg tea.Msg) (Model, tea.Cmd) {
-	if m.showHelp || m.tooSmall() {
+	if m.splash || m.showHelp || m.tooSmall() {
 		switch msg.(type) {
 		case tea.KeyPressMsg, tea.PasteMsg, tea.FocusMsg, tea.BlurMsg:
 			return m, nil
@@ -459,6 +488,12 @@ func (m Model) updateActiveComponent(msg tea.Msg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.splash {
+		if msg.String() == "q" || msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		return m, nil
+	}
 	for _, binding := range m.bindings() {
 		for _, key := range binding.keys {
 			if key == msg.String() {

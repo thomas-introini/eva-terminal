@@ -27,9 +27,10 @@ import (
 // Observe the actual Tea view while driving the app through a real SSH PTY.
 // This avoids brittle assertions against the terminal renderer's ANSI diffs.
 type sshView struct {
-	mu    sync.Mutex
-	text  string
-	state tui.ViewState
+	mu     sync.Mutex
+	text   string
+	state  tui.ViewState
+	splash string
 }
 type observedModel struct {
 	tea.Model
@@ -45,6 +46,9 @@ func (m observedModel) View() tea.View {
 	v := m.Model.View()
 	m.view.mu.Lock()
 	m.view.text = ansi.Strip(v.Content)
+	if strings.Contains(m.view.text, "#####ooooo") {
+		m.view.splash = m.view.text
+	}
 	m.view.state = m.Model.(tui.Model).GetViewState()
 	m.view.mu.Unlock()
 	return v
@@ -53,6 +57,16 @@ func (v *sshView) snapshot() (string, tui.ViewState) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.text, v.state
+}
+
+func (v *sshView) checkSplash(t *testing.T) {
+	t.Helper()
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.splash == "" {
+		t.Fatal("SSH connection did not render the EVA splash")
+	}
+	t.Logf("SSH connection splash:\n%s", v.splash)
 }
 func (v *sshView) wait(t *testing.T, state tui.ViewState, text string) {
 	t.Helper()
@@ -164,6 +178,15 @@ func TestMockSSHShoppingWalkthrough(t *testing.T) {
 		}
 	}
 	view.wait(t, tui.ViewProductList, "results")
+	view.checkSplash(t)
+	if err = session.WindowChange(50, 120); err != nil {
+		t.Fatal(err)
+	}
+	view.wait(t, tui.ViewProductList, ".###ooo    #######. .###   ####.")
+	if err = session.WindowChange(24, 80); err != nil {
+		t.Fatal(err)
+	}
+	view.wait(t, tui.ViewProductList, "##oo  ###. ## ##")
 	send("/Ethiopian")
 	view.wait(t, tui.ViewProductList, "1 results")
 	send("\r")
@@ -247,6 +270,7 @@ func TestMockSSHShoppingWalkthrough(t *testing.T) {
 	session, input = connect()
 	defer session.Close()
 	view.wait(t, tui.ViewOrderConfirmation, "Awaiting payment confirmation")
+	view.checkSplash(t)
 	send("x")
 	view.wait(t, tui.ViewOrderConfirmation, "Cancel this unpaid payment?")
 	send("\x1b")

@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/thomas/eva-terminal-go/internal/storeapi"
 )
@@ -284,7 +285,11 @@ func (m Model) bindings() []uiBinding {
 
 // Panel geometry is shared by every screen and leaves balanced outer margins.
 func (m Model) panelSize() (int, int) {
-	return min(100, max(60, m.width-2)), min(28, max(18, m.height-2))
+	margin := 2
+	if m.height >= 24 {
+		margin = 6 // Three rows above the centered panel for the compact logo.
+	}
+	return min(100, max(60, m.width-2)), min(28, max(18, m.height-margin))
 }
 
 func (m Model) contentSize() (int, int) {
@@ -301,7 +306,7 @@ func (m Model) contentSize() (int, int) {
 func (m *Model) sizeComponents() {
 	w, h := m.contentSize()
 	if m.width >= 80 {
-		m.productList.SetSize(22, h)
+		m.productList.SetSize(min(30, w/3), h)
 	} else {
 		m.productList.SetSize(w, 3)
 	}
@@ -692,6 +697,49 @@ func (m Model) header() string {
 		border.Render("└"+strings.Join(bottom, "┴")+"┘")
 }
 
+// ASCII silhouette of logotipo.pdf; o marks the orange dot.
+const splashLogo = `                          .#.
+       ..###.   .        ####.     ..###..
+    .#####..   ###.     #####.   .##########
+  .####.o      .####   ######   #############.
+ #####ooooo     ##### .#####.  #####.   ######.
+######oooo       ###########  .####.     ######
+ ########....     #########   .#### ...   ######
+  .###########     .######     ###         ####.
+     ...###..        .#.        ..          .#.`
+
+const compactLogo = `                 .#
+   .###.. .#    ###.  .#####.
+ .###oo   .##. ####. ####.####.
+.###ooo    #######. .###   ####.
+ #######.   .####.  .##     ####
+   ..##..     ..     .       ..`
+
+const smallLogo = ` .##. #.## .##.
+##oo  ###. ## ##
+.###.  ##  ##.##`
+
+func (m Model) logoText(logo string, width int, dotColor string) string {
+	dot := lipgloss.NewStyle()
+	if !m.noColor && m.profile != colorprofile.Ascii {
+		dot = dot.Foreground(m.profile.Convert(lipgloss.Color(dotColor)))
+	}
+	lines := strings.Split(logo, "\n")
+	for i, line := range lines {
+		parts := strings.Split(line, "o")
+		for j := range parts {
+			parts[j] = m.styles.Subtle.Render(parts[j])
+		}
+		lines[i] = strings.Join(parts, dot.Render("o"))
+	}
+	return lipgloss.NewStyle().Width(width).Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) splashText() string {
+	colors := [...]string{"#914326", "#D36237", "#FF9864", "#D36237", "#914326"}
+	return m.logoText(splashLogo, 48, colors[m.splashFrame%len(colors)])
+}
+
 func (m Model) View() tea.View {
 	v := tea.NewView("Loading...")
 	v.AltScreen, v.ReportFocus = true, true
@@ -701,6 +749,10 @@ func (m Model) View() tea.View {
 	if m.tooSmall() {
 		text := fitLines("EVA coffee shop\nResize to at least 60 × 18.\nYour shopping state is preserved.\nq / Ctrl+C quit", max(1, min(40, m.width)), max(1, min(4, m.height)))
 		v.SetContent(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, text))
+		return v
+	}
+	if m.splash {
+		v.SetContent(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.splashText()))
 		return v
 	}
 	pw, ph := m.panelSize()
@@ -730,6 +782,16 @@ func (m Model) View() tea.View {
 		text = m.header() + "\n" + m.styles.App.Render(text)
 	}
 	panel := lipgloss.NewStyle().Width(pw).Height(ph).Render(text)
-	v.SetContent(lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel))
+	screen := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
+	if headspace := (m.height - ph) / 2; headspace >= 3 {
+		art, width := compactLogo, 32
+		if headspace < 6 {
+			art, width = smallLogo, 16
+		}
+		lines := strings.Split(screen, "\n")
+		logo := lipgloss.Place(m.width, headspace, lipgloss.Center, lipgloss.Center, m.logoText(art, width, "#D36237"))
+		screen = logo + "\n" + strings.Join(lines[headspace:], "\n")
+	}
+	v.SetContent(screen)
 	return v
 }

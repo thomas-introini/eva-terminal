@@ -33,6 +33,7 @@ type cartSyncMsg struct{ err error }
 func NewStorefrontModel(ctx context.Context, catalog *storefront.Catalog, shopper *storefront.Session, enabled bool) Model {
 	m := NewModel(nil, cache.New[ProductListCacheKey, []woo.Product](time.Minute), cache.New[int, []woo.Variation](time.Minute))
 	m.ctx, m.catalog, m.shopper, m.checkoutEnabled = ctx, catalog, shopper, enabled
+	m.splash = true
 	m.changes = shopper.Subscribe(ctx)
 	m.applyShopper(shopper.Snapshot())
 	if m.sessionState.Attempt != nil && m.sessionState.Attempt.Active() {

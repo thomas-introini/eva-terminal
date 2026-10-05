@@ -280,7 +280,7 @@ func (m Model) shopDescription() string {
 func (m Model) shopDetailSize() (int, int) {
 	w, h := m.contentSize()
 	if m.width >= 80 {
-		w -= 24 // 22-column product list and two-column gap.
+		w -= m.productList.Width() + 2 // Product list and two-column gap.
 	} else {
 		h -= 3
 	}
@@ -312,7 +312,8 @@ func (m Model) shopBody() string {
 	description := m.styles.Subtle.Render(scrollWindow(m.shopDescription(), descw, desch, m.scroll[ViewProductList]))
 	details := fitLines(head+"\n"+description+"\n"+m.shopOptions(dw), dw, dh)
 	if m.width >= 80 {
-		list := lipgloss.NewStyle().Width(22).Height(h).Render(fitLines(m.productList.View(), 22, h))
+		lw := m.productList.Width()
+		list := lipgloss.NewStyle().Width(lw).Height(h).Render(fitLines(m.productList.View(), lw, h))
 		return lipgloss.JoinHorizontal(lipgloss.Top, list, strings.Repeat(" ", 2), details)
 	}
 	return fitLines(m.productList.View(), w, 3) + "\n" + details
