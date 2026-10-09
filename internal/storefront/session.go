@@ -13,30 +13,35 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thomas/eva-terminal-go/internal/analytics"
 	"github.com/thomas/eva-terminal-go/internal/storeapi"
 )
 
 type Intent struct {
-	ID       int    `json:"id"`
-	Name     string `json:"name"`
-	Grind    string `json:"grind,omitempty"`
-	Quantity int    `json:"quantity"`
+	ID          int    `json:"id"`
+	ProductID   int    `json:"product_id,omitempty"`
+	VariationID int    `json:"variation_id,omitempty"`
+	Name        string `json:"name"`
+	Grind       string `json:"grind,omitempty"`
+	Quantity    int    `json:"quantity"`
 }
 
 type SessionState struct {
-	Version         int                             `json:"version"`
-	Store           string                          `json:"store"`
-	CustomerRef     string                          `json:"customer_ref"`
-	CartToken       string                          `json:"cart_token"`
-	Cart            storeapi.Cart                   `json:"cart"`
-	Desired         []Intent                        `json:"desired"`
-	Revision        uint64                          `json:"revision"`
-	Pending         bool                            `json:"pending"`
-	Attempt         *storeapi.Attempt               `json:"attempt,omitempty"`
-	Checkout        *storeapi.BridgeCheckoutRequest `json:"checkout,omitempty"`
-	Billing         *storeapi.CustomerAddress       `json:"billing,omitempty"`
-	ShippingAddress *storeapi.CustomerAddress       `json:"shipping_address,omitempty"`
-	Error           string                          `json:"error,omitempty"`
+	Version                int                             `json:"version"`
+	Store                  string                          `json:"store"`
+	CustomerRef            string                          `json:"customer_ref"`
+	CartToken              string                          `json:"cart_token"`
+	Cart                   storeapi.Cart                   `json:"cart"`
+	Desired                []Intent                        `json:"desired"`
+	Revision               uint64                          `json:"revision"`
+	Pending                bool                            `json:"pending"`
+	Attempt                *storeapi.Attempt               `json:"attempt,omitempty"`
+	Checkout               *storeapi.BridgeCheckoutRequest `json:"checkout,omitempty"`
+	Billing                *storeapi.CustomerAddress       `json:"billing,omitempty"`
+	ShippingAddress        *storeapi.CustomerAddress       `json:"shipping_address,omitempty"`
+	Error                  string                          `json:"error,omitempty"`
+	AnalyticsSubmitted     bool                            `json:"analytics_submitted,omitempty"`
+	AnalyticsLinkAvailable bool                            `json:"analytics_link_available,omitempty"`
 }
 
 type Sessions struct {
@@ -45,10 +50,15 @@ type Sessions struct {
 	stateDir, store string
 	newClient       func(string) *storeapi.Client
 	byKey           map[string]*Session
+	tracker         analytics.Tracker
 }
 
-func NewSessions(ctx context.Context, dir, store string, factory func(string) *storeapi.Client) *Sessions {
-	return &Sessions{ctx: ctx, stateDir: dir, store: store, newClient: factory, byKey: make(map[string]*Session)}
+func NewSessions(ctx context.Context, dir, store string, factory func(string) *storeapi.Client, trackers ...analytics.Tracker) *Sessions {
+	var tracker analytics.Tracker = analytics.Noop{}
+	if len(trackers) > 0 && trackers[0] != nil {
+		tracker = trackers[0]
+	}
+	return &Sessions{ctx: ctx, stateDir: dir, store: store, newClient: factory, byKey: make(map[string]*Session), tracker: tracker}
 }
 
 // Open accepts only the fingerprint of the key verified by the SSH handshake.
@@ -62,7 +72,7 @@ func (m *Sessions) Open(fingerprint string) (*Session, error) {
 	if s := m.byKey[key]; s != nil {
 		return s, nil
 	}
-	s := &Session{ctx: m.ctx, path: filepath.Join(m.stateDir, "sessions", key+".json"), wake: make(chan struct{}, 1), subscribers: make(map[chan SessionState]struct{})}
+	s := &Session{ctx: m.ctx, path: filepath.Join(m.stateDir, "sessions", key+".json"), wake: make(chan struct{}, 1), subscribers: make(map[chan SessionState]struct{}), tracker: m.tracker}
 	if err := readJSON(s.path, &s.state); err != nil {
 		return nil, err
 	}
@@ -79,14 +89,18 @@ func (m *Sessions) Open(fingerprint string) (*Session, error) {
 }
 
 type Session struct {
-	mu          sync.Mutex
-	opMu        sync.Mutex
-	ctx         context.Context
-	client      *storeapi.Client
-	path        string
-	state       SessionState
-	wake        chan struct{}
-	subscribers map[chan SessionState]struct{}
+	mu                 sync.Mutex
+	opMu               sync.Mutex
+	ctx                context.Context
+	client             *storeapi.Client
+	path               string
+	state              SessionState
+	wake               chan struct{}
+	subscribers        map[chan SessionState]struct{}
+	tracker            analytics.Tracker
+	lastActor          analytics.Context // mutation attribution; never reconstructed on reconnect
+	lastActorRevision  uint64
+	lastAnalyticsError string
 }
 
 func (s *Session) Snapshot() SessionState { s.mu.Lock(); defer s.mu.Unlock(); return clone(s.state) }
@@ -123,12 +137,16 @@ func (s *Session) changed(fn func(*SessionState) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	before := clone(s.state)
+	previousActor := s.lastActor
+	previousActorRevision := s.lastActorRevision
 	if err := fn(&s.state); err != nil {
 		return err
 	}
 	s.state.Error = ""
 	if err := s.publishLocked(); err != nil {
 		s.state = before
+		s.lastActor = previousActor
+		s.lastActorRevision = previousActorRevision
 		return err
 	}
 	select {
@@ -138,14 +156,20 @@ func (s *Session) changed(fn func(*SessionState) error) error {
 	return nil
 }
 
-func (s *Session) Add(item Intent) error {
+func (s *Session) Add(item Intent, actors ...analytics.Context) error {
 	if item.ID <= 0 || item.Quantity <= 0 {
 		return errors.New("invalid product or quantity")
 	}
-	return s.changed(func(st *SessionState) error {
+	err := s.changed(func(st *SessionState) error {
 		if st.Attempt != nil && st.Attempt.Active() {
 			return errors.New("cancel the pending payment before editing this cart")
 		}
+		if len(actors) > 0 {
+			s.lastActor = actors[0]
+		} else {
+			s.lastActor = analytics.Context{}
+		}
+		s.lastActorRevision = st.Revision + 1
 		for i := range st.Desired {
 			if sameIntent(st.Desired[i], item) {
 				st.Desired[i].Quantity += item.Quantity
@@ -159,27 +183,48 @@ func (s *Session) Add(item Intent) error {
 		st.Pending = true
 		return nil
 	})
+	if err == nil && len(actors) > 0 {
+		data := IntentAnalyticsIDs(item)
+		data["quantity"], data["confirmation"] = item.Quantity, "local_intent"
+		if grind := analytics.Grind(item.Grind); grind != "" {
+			data["grind"] = grind
+		}
+		s.event(actors[0], "/shop", "add_to_cart", data)
+	}
+	return err
 }
 
-func (s *Session) SetQuantity(id int, grind string, quantity int) error {
+func (s *Session) SetQuantity(id int, grind string, quantity int, actors ...analytics.Context) error {
 	if quantity < 0 {
 		return errors.New("invalid quantity")
 	}
-	return s.quantity(id, grind, func(int) int { return quantity })
+	return s.quantity(id, grind, func(int) int { return quantity }, actors...)
 }
 
-func (s *Session) AdjustQuantity(id int, grind string, delta int) error {
-	return s.quantity(id, grind, func(current int) int { return max(1, current+delta) })
+func (s *Session) AdjustQuantity(id int, grind string, delta int, actors ...analytics.Context) error {
+	return s.quantity(id, grind, func(current int) int { return max(1, current+delta) }, actors...)
 }
 
-func (s *Session) quantity(id int, grind string, value func(int) int) error {
-	return s.changed(func(st *SessionState) error {
+func (s *Session) quantity(id int, grind string, value func(int) int, actors ...analytics.Context) error {
+	var changed Intent
+	var after int
+	err := s.changed(func(st *SessionState) error {
 		if st.Attempt != nil && st.Attempt.Active() {
 			return errors.New("cancel the pending payment before editing this cart")
 		}
 		for i, item := range st.Desired {
 			if item.ID == id && item.Grind == grind {
 				quantity := value(item.Quantity)
+				changed, after = item, quantity
+				if quantity == item.Quantity {
+					return nil
+				}
+				if len(actors) > 0 {
+					s.lastActor = actors[0]
+				} else {
+					s.lastActor = analytics.Context{}
+				}
+				s.lastActorRevision = st.Revision + 1
 				if quantity == 0 {
 					st.Desired = append(st.Desired[:i], st.Desired[i+1:]...)
 				} else {
@@ -192,6 +237,19 @@ func (s *Session) quantity(id int, grind string, value func(int) int) error {
 		}
 		return errors.New("cart item no longer exists")
 	})
+	if err == nil && len(actors) > 0 && changed.Quantity != after {
+		data := IntentAnalyticsIDs(changed)
+		data["confirmation"] = "local_intent"
+		name := "remove_from_cart"
+		if after < changed.Quantity {
+			data["quantity"] = changed.Quantity - after
+		} else {
+			name = "cart_quantity_changed"
+			data["quantity_before"], data["quantity_after"] = changed.Quantity, after
+		}
+		s.event(actors[0], "/cart", name, data)
+	}
+	return err
 }
 
 func sameIntent(a, b Intent) bool { return a.ID == b.ID && a.Grind == b.Grind }
@@ -417,6 +475,14 @@ func (s *Session) failed(err error, revision uint64, reject bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state.Error = err.Error()
+	if s.state.Pending && s.state.Revision == revision && s.lastActorRevision == revision && (s.state.Attempt == nil || !s.state.Attempt.Active()) && s.lastActor.Valid() {
+		code := AnalyticsErrorCode(err)
+		key := fmt.Sprintf("%d:%s", revision, code)
+		if key != s.lastAnalyticsError {
+			s.lastAnalyticsError = key
+			s.event(s.lastActor, "/cart", "checkout_error", map[string]any{"stage": "cart_sync", "error_code": code})
+		}
+	}
 	if reject && s.state.Revision == revision {
 		s.state.Desired = intents(s.state.Cart)
 		s.state.Pending = false
@@ -457,7 +523,7 @@ func (s *Session) Address(ctx context.Context, billing, shipping storeapi.Custom
 	}
 	return s.sync(ctx)
 }
-func (s *Session) Coupon(ctx context.Context, code string, remove bool) error {
+func (s *Session) Coupon(ctx context.Context, code string, remove bool, actors ...analytics.Context) error {
 	return s.cartOperation(ctx, func() (*storeapi.Cart, error) {
 		cart := s.Snapshot().Cart
 		found := false
@@ -470,15 +536,45 @@ func (s *Session) Coupon(ctx context.Context, code string, remove bool) error {
 		if (found && !remove) || (!found && remove) {
 			return &cart, nil
 		}
+		var result *storeapi.Cart
+		var err error
+		name := "coupon_applied"
 		if remove {
-			return s.client.RemoveCoupon(ctx, storeapi.CouponRequest{Code: code})
+			result, err = s.client.RemoveCoupon(ctx, storeapi.CouponRequest{Code: code})
+			name = "coupon_removed"
+		} else {
+			result, err = s.client.ApplyCoupon(ctx, storeapi.CouponRequest{Code: code})
 		}
-		return s.client.ApplyCoupon(ctx, storeapi.CouponRequest{Code: code})
+		if err == nil && len(actors) > 0 {
+			present := false
+			for _, coupon := range result.Coupons {
+				if strings.EqualFold(coupon.Code, code) {
+					present = true
+				}
+			}
+			if present != remove {
+				s.event(actors[0], "/cart", name, nil)
+			}
+		}
+		return result, err
 	})
 }
-func (s *Session) Shipping(ctx context.Context, packageID int, rate string) error {
+func (s *Session) Shipping(ctx context.Context, packageID int, rate string, actors ...analytics.Context) error {
 	return s.cartOperation(ctx, func() (*storeapi.Cart, error) {
-		return s.client.SelectShippingRate(ctx, storeapi.SelectShippingRateRequest{PackageID: packageID, RateID: rate})
+		cart, err := s.client.SelectShippingRate(ctx, storeapi.SelectShippingRateRequest{PackageID: packageID, RateID: rate})
+		if err == nil && len(actors) > 0 {
+			for _, pack := range cart.ShippingRates {
+				if pack.PackageID != packageID {
+					continue
+				}
+				for _, confirmed := range pack.ShippingRates {
+					if confirmed.Selected && confirmed.RateID == rate {
+						s.event(actors[0], "/checkout/shipping", "shipping_selected", map[string]any{"shipping_method": analytics.ShippingMethod(confirmed.RateID)})
+					}
+				}
+			}
+		}
+		return cart, err
 	})
 }
 func (s *Session) Prepare(ctx context.Context) error {
@@ -509,7 +605,7 @@ func QuoteFromCart(cart storeapi.Cart) (storeapi.Quote, error) {
 	return ext.Quote, nil
 }
 
-func (s *Session) Checkout(ctx context.Context, accepted storeapi.Quote, fields storeapi.CheckoutRequest) error {
+func (s *Session) Checkout(ctx context.Context, accepted storeapi.Quote, fields storeapi.CheckoutRequest, actors ...analytics.Context) error {
 	s.opMu.Lock()
 	defer s.opMu.Unlock()
 	st := s.Snapshot()
@@ -534,6 +630,13 @@ func (s *Session) Checkout(ctx context.Context, accepted storeapi.Quote, fields 
 	id := hex.EncodeToString(random[:])
 	fields.PaymentMethod = storeapi.GatewayID
 	req := storeapi.BridgeCheckoutRequest{AttemptID: id, CustomerRef: st.CustomerRef, AcceptedQuote: accepted, Checkout: fields}
+	if len(actors) > 0 && actors[0].Valid() {
+		frozen := actors[0]
+		if checkoutID, idErr := analytics.NewID(); idErr == nil {
+			frozen.CheckoutID = checkoutID
+			req.Analytics = &frozen
+		}
+	}
 	s.mu.Lock()
 	if s.state.Pending || s.state.Revision != st.Revision {
 		s.mu.Unlock()
@@ -541,6 +644,7 @@ func (s *Session) Checkout(ctx context.Context, accepted storeapi.Quote, fields 
 	}
 	before := clone(s.state)
 	s.state.Checkout = &req
+	s.state.AnalyticsSubmitted, s.state.AnalyticsLinkAvailable = req.Analytics != nil, false
 	s.state.Attempt = &storeapi.Attempt{AttemptID: id, PaymentState: "submitting", Total: accepted.Total, Currency: accepted.Currency}
 	err = s.publishLocked()
 	if err != nil {
@@ -549,6 +653,9 @@ func (s *Session) Checkout(ctx context.Context, accepted storeapi.Quote, fields 
 	s.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	if req.Analytics != nil {
+		s.event(*req.Analytics, "/checkout/review", "checkout_submitted", map[string]any{"checkout_id": req.Analytics.CheckoutID})
 	}
 	a, err := s.client.BridgeCheckout(ctx, req)
 	if err != nil {
@@ -576,6 +683,11 @@ func (s *Session) acceptAttempt(a storeapi.Attempt) error {
 	defer s.mu.Unlock()
 	s.state.Attempt = &a
 	s.state.Error = ""
+	var attribution *analytics.Context
+	if a.PaymentURL != "" && !s.state.AnalyticsLinkAvailable && s.state.Checkout != nil && s.state.Checkout.Analytics != nil {
+		s.state.AnalyticsLinkAvailable = true
+		attribution = s.state.Checkout.Analytics
+	}
 	if a.PaymentState == "paid" {
 		s.state.Desired = nil
 		s.state.Pending = false
@@ -590,7 +702,11 @@ func (s *Session) acceptAttempt(a storeapi.Attempt) error {
 	if a.PaymentState == "cancelled" || a.PaymentState == "expired" {
 		s.state.Pending = true
 	}
-	return s.publishLocked()
+	err := s.publishLocked()
+	if err == nil && attribution != nil {
+		s.event(*attribution, "/checkout/payment", "payment_link_available", map[string]any{"checkout_id": attribution.CheckoutID})
+	}
+	return err
 }
 
 func (s *Session) Recover(ctx context.Context) error {

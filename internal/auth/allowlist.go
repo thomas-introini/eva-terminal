@@ -81,6 +81,3 @@ func CreateEmptyAllowlist(path string) error {
 `
 	return os.WriteFile(path, []byte(content), 0644)
 }
-
-
-

@@ -2,10 +2,23 @@ services:
   wordpress:
     environment:
       EVA_TERMINAL_FAKE_STRIPE: "1"
+      EVA_TERMINAL_FAKE_UMAMI: "1"
+      EVA_TERMINAL_UMAMI_ENABLED: "true"
+      EVA_TERMINAL_UMAMI_BASE_URL: "http://127.0.0.1:1"
+      EVA_TERMINAL_UMAMI_WEBSITE_ID: "11111111-1111-4111-8111-111111111111"
+      EVA_TERMINAL_UMAMI_ENVIRONMENT: "staging"
     volumes:
       - ./docker/fake-stripe.php:/var/www/html/wp-content/mu-plugins/eva-fake-stripe.php:ro
+      - ./docker/fake-umami.php:/var/www/html/wp-content/mu-plugins/eva-fake-umami.php:ro
   wpcli:
     environment:
       EVA_TERMINAL_FAKE_STRIPE: "1"
+      EVA_TERMINAL_FAKE_UMAMI: "1"
+      EVA_TERMINAL_UMAMI_ENABLED: "true"
+      EVA_TERMINAL_UMAMI_BASE_URL: "http://127.0.0.1:1"
+      EVA_TERMINAL_UMAMI_WEBSITE_ID: "11111111-1111-4111-8111-111111111111"
+      EVA_TERMINAL_UMAMI_ENVIRONMENT: "staging"
+      WOO_VERSION: "10.4.3"
     volumes:
       - ./docker/fake-stripe.php:/var/www/html/wp-content/mu-plugins/eva-fake-stripe.php:ro
+      - ./docker/fake-umami.php:/var/www/html/wp-content/mu-plugins/eva-fake-umami.php:ro

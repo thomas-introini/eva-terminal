@@ -30,7 +30,11 @@ wp rewrite flush 2>/dev/null || true
 # Install and activate WooCommerce
 if ! wp plugin is-installed woocommerce 2>/dev/null; then
     echo "==> Installing WooCommerce..."
-    wp plugin install woocommerce --activate
+    if [ -n "${WOO_VERSION:-}" ]; then
+        wp plugin install woocommerce --version="$WOO_VERSION" --activate
+    else
+        wp plugin install woocommerce --activate
+    fi
 else
     echo "==> WooCommerce already installed"
     wp plugin activate woocommerce 2>/dev/null || true
@@ -48,7 +52,8 @@ wp option update woocommerce_calc_taxes "no"
 # Native Store API authentication remains enabled. No REST bypass plugin.
 wp plugin activate eva-terminal-gateway
 wp option update woocommerce_hold_stock_minutes 35
-wp option update woocommerce_eva_terminal_stripe_checkout_settings '{"enabled":"yes","testmode":"yes"}' --format=json
+# Test credentials are injected by an option filter; an unchanged raw update returns false.
+wp eval 'update_option("woocommerce_eva_terminal_stripe_checkout_settings", ["enabled" => "yes", "testmode" => "yes"]);'
 
 # Create product attributes using WooCommerce PHP API
 echo "==> Creating product attributes..."

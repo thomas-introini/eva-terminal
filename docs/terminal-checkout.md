@@ -1,12 +1,16 @@
 # Fast terminal storefront: operation and rollout
 
+Follow the [deployment checklist](deployment-checklist.md) to prepare a host, deploy to private staging, validate real payments and promote to a production canary.
+
 ## Runtime
 
-One Go process owns a shared, anonymous catalog and one controller per verified SSH key fingerprint. Simultaneous connections using the same key share a cart. Catalog navigation and search use a complete local snapshot; refresh defaults to 60 seconds. Quantity writes coalesce for 250 ms and run sequentially. WooCommerce computes prices, coupons, shipping, fees, taxes, stock limits and final order totals.
+One Go process owns a shared, anonymous catalog and one controller per verified SSH key fingerprint. Simultaneous connections using the same key share a cart. Catalog navigation and search use a complete local snapshot; background refresh defaults to 60 seconds. Manual and background catalog refreshes share a cooldown after each completed attempt, including failures; `CATALOG_REFRESH_COOLDOWN_SECONDS` defaults to 30 and accepts integers from 1 to 86400. Quantity writes coalesce for 250 ms and run sequentially. WooCommerce computes prices, coupons, shipping, fees, taxes, stock limits and final order totals.
 
 `STATE_DIR` defaults to `./var/eva-terminal`. Versioned catalog and shopper JSON files are written with atomic rename and fsync, directories `0700`, files `0600`. Shopper files contain addresses, Cart-Tokens, order keys and payment links. Back up this directory securely together with the WordPress database. Run one Go server against a state directory; multiple Go processes are unsupported. Keep the Woo base URL and Store API prefix stable because they form the store identity. Losing a key creates a different shopper; SSH usernames do not identify website accounts.
 
 A failed catalog refresh retains the previous snapshot and displays its age. An expired Cart-Token creates a new guest cart and revalidates saved items and address information. Woo can reject an item or change a quote; confirmation is required again. Unknown cart responses are reconciled with GET before any retry. Unknown checkout responses retain their attempt ID and exact request. Do not delete recovery files to retry a payment.
+
+Optional [terminal analytics](terminal-analytics.md) default to off. When enabled, anonymous connection attribution is frozen in that exact checkout request before the first bridge call. Gateway schema 4 adds a separate purchase outbox and `eva_terminal_analytics` minute job; the same real cron runner sends purchases after disconnects and repairs missing enqueue records. Analytics failures do not change payment recovery, and Woo remains the source of order and revenue totals.
 
 ## Terminal shopping flow
 

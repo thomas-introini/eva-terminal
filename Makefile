@@ -1,4 +1,4 @@
-.PHONY: dev test fmt lint build clean mockwoo woossh docker-up docker-down docker-logs docker-seed dev-docker
+.PHONY: dev test fmt lint build clean mockwoo woossh docker-up docker-down docker-logs docker-seed dev-docker container-check
 
 -include .env
 export
@@ -32,6 +32,10 @@ woossh:
 # Run tests
 test:
 	go test -v ./...
+
+# Build and smoke-test the deployment container with isolated temporary storage
+container-check:
+	sh docker/container-check.sh
 
 # Run tests with coverage
 test-coverage:
@@ -123,6 +127,7 @@ help:
 	@echo ""
 	@echo "  Testing & Quality:"
 	@echo "    make test          - Run all tests"
+	@echo "    make container-check - Check the deployment image, SSH auth and persistence"
 	@echo "    make test-coverage - Run tests with coverage report"
 	@echo "    make fmt           - Format code and tidy modules"
 	@echo "    make lint          - Run go vet"
@@ -137,7 +142,7 @@ gateway-build:
 	sh wordpress/eva-terminal-gateway/build.sh
 
 gateway-check:
-	find wordpress/eva-terminal-gateway/includes -name '*.php' -exec php -l {} \;
+	find wordpress/eva-terminal-gateway/includes -name '*.php' -print0 | xargs -0 -n 1 php -l
 	php -l wordpress/eva-terminal-gateway/eva-terminal-gateway.php
 	php wordpress/eva-terminal-gateway/tests/sdk.php
 
@@ -147,3 +152,4 @@ gateway-integration: gateway-build
 	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml run --rm --no-deps wpcli
 	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters python3 wordpress/eva-terminal-gateway/tests/integration.py
 	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml run --rm --no-deps --entrypoint wp wpcli eval-file /var/www/html/wp-content/plugins/eva-terminal-gateway/tests/orders.php
+	EVA_BRIDGE_KEY=eva-terminal-local-check-key-32-characters WOO_HTTP_PORT=18081 docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml run --rm --no-deps --entrypoint wp wpcli eval-file /var/www/html/wp-content/plugins/eva-terminal-gateway/tests/analytics.php

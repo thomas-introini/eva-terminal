@@ -75,7 +75,11 @@ func (m *Model) applyShopper(st storefront.SessionState) {
 	selected := m.localCart.SelectedIdx
 	m.localCart.Items = nil
 	for _, item := range st.Desired {
-		m.localCart.Items = append(m.localCart.Items, LocalCartItem{ProductID: item.ID, Name: item.Name, Quantity: item.Quantity, GrindSize: item.Grind})
+		productID := item.ProductID
+		if productID == 0 {
+			productID = item.ID
+		}
+		m.localCart.Items = append(m.localCart.Items, LocalCartItem{ProductID: productID, VariationID: item.VariationID, Name: item.Name, Quantity: item.Quantity, GrindSize: item.Grind})
 	}
 	m.localCart.SelectedIdx = selected
 	if selected >= len(st.Desired) {
@@ -161,7 +165,7 @@ func (m Model) submitCheckout() tea.Cmd {
 		if !m.checkoutEnabled {
 			return errMsg{fmt.Errorf("new checkouts are disabled; existing payments remain available")}
 		}
-		err := m.shopper.Checkout(m.ctx, accepted, storeapi.CheckoutRequest{BillingAddress: &address, ShippingAddress: &address})
+		err := m.shopper.Checkout(m.ctx, accepted, storeapi.CheckoutRequest{BillingAddress: &address, ShippingAddress: &address}, m.analytics.connection)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -196,7 +200,9 @@ func (m Model) recheckPayment() tea.Cmd {
 }
 
 func (m Model) submitCoupon(code string, remove bool) tea.Cmd {
-	return func() tea.Msg { return couponCompleteMsg{m.shopper.Coupon(m.ctx, code, remove)} }
+	return func() tea.Msg {
+		return couponCompleteMsg{m.shopper.Coupon(m.ctx, code, remove, m.analytics.connection)}
+	}
 }
 
 func (m Model) hasDeliveryChoice() bool {
@@ -256,7 +262,7 @@ func (m Model) updateShipping(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		return m, func() tea.Msg {
 			for _, rate := range rates {
-				if err := m.shopper.Shipping(m.ctx, rate.PackageID, rate.RateID); err != nil {
+				if err := m.shopper.Shipping(m.ctx, rate.PackageID, rate.RateID, m.analytics.connection); err != nil {
 					return shippingCompleteMsg{err}
 				}
 			}

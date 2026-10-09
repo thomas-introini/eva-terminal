@@ -10,9 +10,10 @@
  */
 defined('ABSPATH') || exit;
 require_once __DIR__ . '/includes/stripe.php';
+require_once __DIR__ . '/includes/analytics.php';
 require_once __DIR__ . '/includes/bridge.php';
 register_activation_hook(__FILE__, ['Eva_Terminal_Bridge', 'install']);
-register_deactivation_hook(__FILE__, static function () { wp_clear_scheduled_hook('eva_terminal_reconcile'); });
+register_deactivation_hook(__FILE__, static function () { wp_clear_scheduled_hook('eva_terminal_reconcile'); wp_clear_scheduled_hook('eva_terminal_analytics'); });
 add_action('before_woocommerce_init', static function () {
     if (class_exists(Automattic\WooCommerce\Utilities\FeaturesUtil::class)) {
         Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);

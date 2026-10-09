@@ -1,0 +1,38 @@
+name: Gateway integration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gateway-integration:
+    name: Woo checkout integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EVA_BRIDGE_KEY: eva-terminal-local-check-key-32-characters
+      WOO_HTTP_PORT: '18081'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.2'
+          extensions: curl, mbstring
+          tools: composer:v2
+          coverage: none
+      - name: Check native Woo checkout
+        run: make gateway-integration
+      - name: Show test store logs on failure
+        if: failure()
+        run: docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml logs --no-color
+      - name: Remove test store
+        if: always()
+        run: docker compose -p eva-terminal-check -f docker-compose.yml -f docker/compose.test.yml down --volumes --remove-orphans

@@ -3,10 +3,13 @@ package config
 
 import (
 	"errors"
+	"log"
 	"net/url"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/thomas/eva-terminal-go/internal/analytics"
 )
 
 // AuthMode represents the SSH authentication mode.
@@ -32,14 +35,19 @@ type Config struct {
 	WooStorePrefix    string
 
 	// Cache settings
-	CacheTTL        time.Duration
-	StateDir        string
-	BridgeKey       string
-	CheckoutEnabled bool
+	CacheTTL               time.Duration
+	CatalogRefreshCooldown time.Duration
+	StateDir               string
+	BridgeKey              string
+	CheckoutEnabled        bool
+	Analytics              analytics.Config
 }
 
 // Load reads configuration from environment variables with defaults.
 func Load() (*Config, error) {
+	if enabled := getEnv("UMAMI_ENABLED", "false"); enabled != "true" && enabled != "false" {
+		log.Print("Analytics disabled: UMAMI_ENABLED must be true or false")
+	}
 	cfg := &Config{
 		SSHAddr:           getEnv("SSH_ADDR", ":23234"),
 		SSHHostKeyPath:    getEnv("SSH_HOSTKEY_PATH", "./.ssh_host_ed25519_key"),
@@ -52,6 +60,11 @@ func Load() (*Config, error) {
 		StateDir:          getEnv("STATE_DIR", "./var/eva-terminal"),
 		BridgeKey:         os.Getenv("EVA_BRIDGE_KEY"),
 		CheckoutEnabled:   getEnv("CHECKOUT_ENABLED", "false") == "true",
+		Analytics: analytics.Config{
+			Enabled: getEnv("UMAMI_ENABLED", "false") == "true",
+			BaseURL: os.Getenv("UMAMI_BASE_URL"), WebsiteID: os.Getenv("UMAMI_WEBSITE_ID"),
+			Hostname: getEnv("UMAMI_HOSTNAME", "eva-terminal"), Environment: getEnv("UMAMI_ENVIRONMENT", "development"),
+		},
 	}
 
 	// Parse cache TTL
@@ -63,6 +76,14 @@ func Load() (*Config, error) {
 	if ttlSeconds <= 0 || ttlSeconds > 86400 {
 		return nil, errors.New("CACHE_TTL_SECONDS must be between 1 and 86400")
 	}
+	cooldownSeconds, err := strconv.Atoi(getEnv("CATALOG_REFRESH_COOLDOWN_SECONDS", "30"))
+	if err != nil {
+		return nil, errors.New("CATALOG_REFRESH_COOLDOWN_SECONDS must be a valid integer")
+	}
+	if cooldownSeconds <= 0 || cooldownSeconds > 86400 {
+		return nil, errors.New("CATALOG_REFRESH_COOLDOWN_SECONDS must be between 1 and 86400")
+	}
+	cfg.CatalogRefreshCooldown = time.Duration(cooldownSeconds) * time.Second
 	if cfg.CheckoutEnabled && len(cfg.BridgeKey) < 32 {
 		return nil, errors.New("checkout requires EVA_BRIDGE_KEY with at least 32 characters")
 	}

@@ -20,6 +20,7 @@ import (
 	"charm.land/wish/v2/bubbletea"
 	gossh "golang.org/x/crypto/ssh"
 
+	"github.com/thomas/eva-terminal-go/internal/analytics"
 	"github.com/thomas/eva-terminal-go/internal/auth"
 	"github.com/thomas/eva-terminal-go/internal/config"
 	"github.com/thomas/eva-terminal-go/internal/storeapi"
@@ -66,14 +67,22 @@ func main() {
 
 	appCtx, stop := context.WithCancel(context.Background())
 	defer stop()
-	catalog, err := storefront.NewCatalog(storeapi.NewClient(cfg.WooBaseURL, storeapi.WithStorePrefix(cfg.WooStorePrefix)), cfg.StateDir, cfg.WooBaseURL+cfg.WooStorePrefix)
+	collector, analyticsErr := analytics.New(appCtx, cfg.Analytics, nil)
+	var tracker analytics.Tracker = analytics.Noop{}
+	if analyticsErr != nil {
+		log.Printf("Analytics disabled: %v", analyticsErr)
+	} else if collector != nil {
+		tracker = collector
+	}
+	defer collector.Close()
+	catalog, err := storefront.NewCatalog(storeapi.NewClient(cfg.WooBaseURL, storeapi.WithStorePrefix(cfg.WooStorePrefix)), cfg.StateDir, cfg.WooBaseURL+cfg.WooStorePrefix, cfg.CatalogRefreshCooldown)
 	if err != nil {
 		log.Fatal(err)
 	}
 	go catalog.Run(appCtx, cfg.CacheTTL)
 	sessions := storefront.NewSessions(appCtx, cfg.StateDir, cfg.WooBaseURL+cfg.WooStorePrefix, func(token string) *storeapi.Client {
 		return storeapi.NewClient(cfg.WooBaseURL, storeapi.WithStorePrefix(cfg.WooStorePrefix), storeapi.WithSessionTokens(token, ""), storeapi.WithBridgeKey(cfg.BridgeKey))
-	})
+	}, tracker)
 
 	// Create SSH server options
 	opts := []ssh.Option{
@@ -89,7 +98,12 @@ func main() {
 					log.Printf("Cannot restore shopper state: %v", err)
 					return tui.NewErrorModel("Cannot restore shopper state; contact the store"), nil
 				}
-				return tui.NewStorefrontModel(s.Context(), catalog, shopper, cfg.CheckoutEnabled), nil
+				connection, idErr := analytics.NewContext(cfg.Analytics.Environment)
+				connection.Collect = idErr == nil && collector != nil
+				if idErr != nil {
+					log.Print("Analytics disabled for connection: random ID unavailable")
+				}
+				return tui.NewStorefrontModel(s.Context(), catalog, shopper, cfg.CheckoutEnabled).WithAnalytics(tracker, connection), nil
 			}),
 		),
 	}
@@ -135,12 +149,11 @@ func main() {
 	<-done
 	log.Println("Shutting down...")
 
-	stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		log.Fatalf("Shutdown error: %v", err)
+		log.Printf("Shutdown error: %v", err)
 	}
 }
 

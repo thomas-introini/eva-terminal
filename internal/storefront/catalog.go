@@ -20,16 +20,21 @@ type CatalogSnapshot struct {
 }
 
 type Catalog struct {
-	mu          sync.RWMutex
-	refreshMu   sync.Mutex
-	client      *storeapi.Client
-	path, store string
-	snapshot    CatalogSnapshot
-	lastError   error
+	mu              sync.RWMutex
+	refreshMu       sync.Mutex
+	refreshCooldown time.Duration
+	lastRefresh     time.Time // Protected by refreshMu; includes failed attempts.
+	client          *storeapi.Client
+	path, store     string
+	snapshot        CatalogSnapshot
+	lastError       error
 }
 
-func NewCatalog(client *storeapi.Client, stateDir, store string) (*Catalog, error) {
-	c := &Catalog{client: client, store: store, path: filepath.Join(stateDir, "catalog-"+digest(store)+".json")}
+func NewCatalog(client *storeapi.Client, stateDir, store string, refreshCooldown time.Duration) (*Catalog, error) {
+	if refreshCooldown <= 0 {
+		return nil, errors.New("catalog refresh cooldown must be positive")
+	}
+	c := &Catalog{client: client, store: store, path: filepath.Join(stateDir, "catalog-"+digest(store)+".json"), refreshCooldown: refreshCooldown}
 	if err := readJSON(c.path, &c.snapshot); err != nil {
 		return nil, err
 	}
@@ -64,6 +69,15 @@ func (c *Catalog) Products(search string, inStock bool) []storeapi.Product {
 func (c *Catalog) Refresh(ctx context.Context) error {
 	c.refreshMu.Lock()
 	defer c.refreshMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if time.Since(c.lastRefresh) < c.refreshCooldown {
+		_, err := c.Status()
+		return err
+	}
+	// Start the cooldown after completion so queued callers share this result.
+	defer func() { c.lastRefresh = time.Now() }()
 	s := CatalogSnapshot{Version: 1, Store: c.store, UpdatedAt: time.Now().UTC(), Variations: make(map[int][]storeapi.Product)}
 	var err error
 	s.Products, err = c.all(ctx, storeapi.ProductQuery{})

@@ -13,6 +13,7 @@ final class Eva_Terminal_Bridge {
 
     public static function install(): void {
         global $wpdb;
+        add_filter('cron_schedules', [self::class, 'schedules']);
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         $table = self::table();
         dbDelta("CREATE TABLE $table (
@@ -32,18 +33,22 @@ final class Eva_Terminal_Bridge {
             refund_pending longtext DEFAULT NULL,
             needs_reconcile tinyint NOT NULL DEFAULT 0,
             last_checked bigint NOT NULL DEFAULT 0,
+            analytics_context longtext DEFAULT NULL,
             PRIMARY KEY (attempt_id),
             UNIQUE KEY active_customer (active_customer),
             KEY order_id (order_id),
             KEY state (state)
         ) ENGINE=InnoDB {$wpdb->get_charset_collate()};");
         if (!wp_next_scheduled('eva_terminal_reconcile')) { wp_schedule_event(time() + 60, 'eva_terminal_minute', 'eva_terminal_reconcile'); }
-        update_option('eva_terminal_schema', 3, false);
+        Eva_Terminal_Analytics::install();
+        update_option('eva_terminal_schema', 4, false);
     }
 
     public static function boot(): void {
-        add_filter('cron_schedules', static function ($s) { $s['eva_terminal_minute'] = ['interval' => 60, 'display' => 'Every minute']; return $s; });
-        if ((int)get_option('eva_terminal_schema') !== 3) { self::install(); }
+        add_filter('cron_schedules', [self::class, 'schedules']);
+        if ((int)get_option('eva_terminal_schema') !== 4) { self::install(); }
+        if (!wp_next_scheduled('eva_terminal_reconcile')) { wp_schedule_event(time() + 60, 'eva_terminal_minute', 'eva_terminal_reconcile'); }
+        Eva_Terminal_Analytics::boot();
         add_action('rest_api_init', [self::class, 'routes']);
         add_action('eva_terminal_reconcile', [self::class, 'cron']);
         add_action('woocommerce_store_api_checkout_update_order_from_request', [self::class, 'journal'], 100, 2);
@@ -74,6 +79,8 @@ final class Eva_Terminal_Bridge {
             } finally { self::unlock($row['customer_ref']); }
         }, 100, 2);
     }
+
+    public static function schedules(array $s): array { $s['eva_terminal_minute'] = ['interval' => 60, 'display' => 'Every minute']; return $s; }
 
     public static function authorized(): bool {
         $key = defined('EVA_TERMINAL_BRIDGE_KEY') ? EVA_TERMINAL_BRIDGE_KEY : getenv('EVA_TERMINAL_BRIDGE_KEY');
@@ -167,6 +174,7 @@ final class Eva_Terminal_Bridge {
     private static function update(string $id, array $data): void {
         global $wpdb;
         if ($wpdb->update(self::table(), $data, ['attempt_id' => $id]) === false) { throw new RuntimeException('Cannot persist payment attempt'); }
+        if (($data['state'] ?? '') === 'paid' && ($row = self::row($id))) { Eva_Terminal_Analytics::enqueue($row); }
     }
     private static function lock(string $owner): void {
         global $wpdb;
@@ -207,7 +215,8 @@ final class Eva_Terminal_Bridge {
                 if ($engine !== null && strtoupper($engine) !== 'INNODB') { throw new RuntimeException('Checkout requires InnoDB order and attempt tables'); }
             }
             if (!$row) {
-                $ok = $wpdb->insert(self::table(), ['attempt_id' => $id, 'customer_ref' => $owner, 'active_customer' => $owner, 'request_hash' => $hash, 'created_at' => time(), 'mode' => ($settings['testmode'] ?? 'yes') === 'yes' ? 'test' : 'live']);
+                $analytics = Eva_Terminal_Analytics::context($body['analytics'] ?? null);
+                $ok = $wpdb->insert(self::table(), ['attempt_id' => $id, 'customer_ref' => $owner, 'active_customer' => $owner, 'request_hash' => $hash, 'created_at' => time(), 'mode' => ($settings['testmode'] ?? 'yes') === 'yes' ? 'test' : 'live', 'analytics_context' => $analytics ? wp_json_encode($analytics) : null]);
                 if (!$ok) { return new WP_Error('eva_active_attempt', 'Recover or cancel the existing active payment before placing another order', ['status' => 409]); }
                 $row = self::row($id);
             }
@@ -246,6 +255,7 @@ final class Eva_Terminal_Bridge {
         $order->set_payment_method(self::GATEWAY);
         $order->update_meta_data('_eva_terminal_attempt', self::$context['attempt_id']);
         $order->update_meta_data('_eva_terminal_customer', self::$context['customer_ref']);
+        if (!empty(self::$context['analytics_context'])) { $order->update_meta_data('_eva_terminal_analytics', json_decode(self::$context['analytics_context'], true)); }
         $order->save();
         self::update(self::$context['attempt_id'], ['order_id' => $order->get_id()]);
     }
@@ -311,6 +321,7 @@ final class Eva_Terminal_Bridge {
     }
 
     public static function response(array $row, $session = null): array {
+        if ($row['state'] === 'paid') { Eva_Terminal_Analytics::enqueue($row); }
         $order = $row['order_id'] ? wc_get_order($row['order_id']) : null;
         $url = $session ? (string)$session->url : '';
         if (!$url && $row['stripe_session'] && $row['state'] === 'awaiting_payment') { $url = (string)self::stripe($row)->checkout->sessions->retrieve($row['stripe_session'])->url; }

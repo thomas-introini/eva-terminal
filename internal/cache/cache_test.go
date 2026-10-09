@@ -178,8 +178,8 @@ func TestCacheConcurrency(t *testing.T) {
 
 func TestCacheWithStructKey(t *testing.T) {
 	type CacheKey struct {
-		Page    int
-		Search  string
+		Page   int
+		Search string
 	}
 
 	c := New[CacheKey, []string](time.Minute)
@@ -249,6 +249,3 @@ func TestCacheOverwrite(t *testing.T) {
 		t.Errorf("expected 2 (overwritten value), got %d", val)
 	}
 }
-
-
-

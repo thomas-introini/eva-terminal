@@ -96,6 +96,3 @@ func (c *Cache[K, V]) Len() int {
 	defer c.mu.RUnlock()
 	return len(c.items)
 }
-
-
-

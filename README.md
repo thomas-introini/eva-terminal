@@ -10,7 +10,11 @@ The `.env` file is optional. Build and validation commands work from a fresh che
 
 The terminal browses a complete local catalog snapshot and keeps one durable WooCommerce guest cart per verified SSH key. Quantity updates synchronize in the background; Woo calculates checkout totals and manages stock/orders. Final card or wallet payment opens Stripe hosted Checkout. A custom Woo gateway journals attempts and recovers payments through signed webhooks and terminal polling.
 
-See [setup, recovery and rollout checklist](docs/terminal-checkout.md). Build the gateway with `make gateway-build`; the Go server needs only its bridge key, never Stripe credentials.
+Start with the [deployment checklist](docs/deployment-checklist.md) for private staging and promotion to a production canary. See [checkout setup and recovery](docs/terminal-checkout.md) for gateway details. Build the gateway with `make gateway-build`; the Go server needs only its bridge key, never Stripe credentials.
+
+For a single-instance container on Coolify, follow the [Coolify deployment steps](docs/deployment-checklist.md#coolify-deployment). The root Dockerfile defaults to allowlisted access with checkout and analytics disabled; `make container-check` verifies the image and persistent storage locally.
+
+Optional anonymous SSH analytics use a dedicated Umami website; confirmed purchases are sent by the gateway even after disconnects. Tracking defaults to off. See [setup, event semantics, delivery limits and staging rollout](docs/terminal-analytics.md).
 
 ## Quick Start (Development)
 
@@ -171,7 +175,7 @@ In public mode, any SSH public key can connect after the normal SSH proof of pos
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Set `WOO_BASE_URL`, `STATE_DIR`, and `EVA_BRIDGE_KEY` (the same value as WordPress's `EVA_TERMINAL_BRIDGE_KEY`). New checkouts default to disabled; use `CHECKOUT_ENABLED=true` after staging validation. `WOO_STORE_PREFIX` defaults to `/wp-json/wc/store/v1`; `CACHE_TTL_SECONDS=60` controls background catalog refresh. Native Store API browsing requires no Woo consumer keys.
+Copy `.env.example` to `.env`. Set `WOO_BASE_URL`, `STATE_DIR`, and `EVA_BRIDGE_KEY` (the same value as WordPress's `EVA_TERMINAL_BRIDGE_KEY`). New checkouts default to disabled; use `CHECKOUT_ENABLED=true` after staging validation. `WOO_STORE_PREFIX` defaults to `/wp-json/wc/store/v1`; `CACHE_TTL_SECONDS=60` controls background catalog refresh. `CATALOG_REFRESH_COOLDOWN_SECONDS` defaults to `30` and accepts integer values from `1` to `86400`. All catalog refreshes, including `r` across SSH connections, share this cooldown after each completed attempt. During the cooldown they reuse the cached catalog and the last refresh result, including errors; no new Woo requests are made. Restart the SSH server after changing the setting. Native Store API browsing requires no Woo consumer keys.
 
 Add your SSH key to `allowlist_authorized_keys`, then run `make woossh`. Public development mode accepts any public key after SSH verifies possession; cart identity still comes from that key.
 
@@ -217,6 +221,7 @@ make dev-docker     # Start woossh with Docker WooCommerce
 
 # Testing & Quality
 make test           # Run all tests
+make container-check # Build and smoke-test the deployment container
 make test-coverage  # Run tests with coverage report
 make fmt            # Format code
 make lint           # Run go vet
@@ -239,6 +244,12 @@ make clean          # Clean build artifacts
 - **HTML Stripping**: Clean product descriptions
 
 ## Testing
+
+[CI](.github/workflows/ci.yml) runs on pull requests and pushes to `main`. Its three jobs check Go formatting, vetting, race tests and builds; the deployment container; and the PHP gateway build, syntax and SDK isolation. Go dependencies are cached, and the toolchain comes from `go.mod`. Jobs run with read-only repository permissions and cancel superseded runs. Use PHP 8.2 for gateway builds to match CI and the Docker test store; the current SDK scoping tool failed isolation with the local PHP 8.5 toolchain.
+
+Run the full checkout suite before gateway releases through **Actions → Gateway integration → Run workflow**, selecting the release branch. The [manual workflow](.github/workflows/gateway-integration.yml) uses an isolated Docker store with simulated Stripe/Umami, prints store logs on failure and removes its test containers and volumes. It needs no production credentials. Commit and push the workflow files to `main` before using the manual trigger.
+
+Configure branch protection or a ruleset to require the **Go**, **Container** and **Woo gateway** checks before merging into `main`. Keep Coolify staging deployments manual and deploy the passing commit; these workflows do not configure repository rules or trigger deployments.
 
 ```bash
 # Run all tests

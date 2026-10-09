@@ -14,10 +14,10 @@ import (
 
 // Client is a WooCommerce REST API client.
 type Client struct {
-	baseURL       string
-	consumerKey   string
+	baseURL        string
+	consumerKey    string
 	consumerSecret string
-	httpClient    *http.Client
+	httpClient     *http.Client
 }
 
 // ClientOption is a functional option for configuring the client.
@@ -197,6 +197,3 @@ func (c *Client) doPostRequest(ctx context.Context, endpoint string, body interf
 
 	return nil
 }
-
-
-

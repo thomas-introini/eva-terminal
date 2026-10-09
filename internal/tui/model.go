@@ -45,6 +45,7 @@ type ProductListCacheKey struct {
 
 // Model is the main Bubble Tea model for the TUI.
 type Model struct {
+	analytics       analyticsState
 	ctx             context.Context
 	catalog         *storefront.Catalog
 	catalogUpdated  time.Time
@@ -273,6 +274,13 @@ func tickSplash(delay time.Duration) tea.Cmd {
 
 // Update handles messages and updates the model.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	updated := next.(Model)
+	observed := updated.observeAnalytics(msg)
+	return updated, tea.Batch(cmd, observed)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -332,6 +340,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case paymentActionMsg:
 		m.cancelling, m.checking, m.confirmCancel = false, false, false
 		m.err = msg.err
+		m.analyticsError("payment", msg.err)
 		m.applyShopper(m.shopper.Snapshot())
 		if msg.err == nil {
 			m.notice = "Payment status checked"
@@ -346,10 +355,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case cartSyncMsg:
 		m.err = msg.err
+		m.analyticsError("cart", msg.err)
 		m.applyShopper(m.shopper.Snapshot())
 	case couponCompleteMsg:
 		m.couponBusy = false
 		m.err = msg.err
+		m.analyticsError("coupon", msg.err)
 		m.applyShopper(m.shopper.Snapshot())
 		if msg.err == nil {
 			m.couponMode = ""
@@ -359,6 +370,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case preparedMsg:
 		m.preparing = false
 		m.err = msg.err
+		stage := "checkout"
+		if msg.fromAddress {
+			stage = "address"
+		}
+		m.analyticsError(stage, msg.err)
 		m.applyShopper(m.shopper.Snapshot())
 		if msg.err == nil {
 			m.quote = msg.quote
@@ -377,6 +393,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shippingCompleteMsg:
 		m.shippingBusy = false
 		m.err = msg.err
+		m.analyticsError("shipping", msg.err)
 		m.applyShopper(m.shopper.Snapshot())
 		if msg.err == nil {
 			m.shippingForm = nil
@@ -421,6 +438,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.catalogErr, m.loadingProducts = msg.err, false
 	case errMsg:
 		m.err = msg.err
+		m.analyticsError("checkout", msg.err)
 		m.creatingOrder = false
 		if m.shopper != nil {
 			m.applyShopper(m.shopper.Snapshot())
@@ -441,7 +459,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		// huh navigation and cursor blink messages are private component messages.
 		switch msg.(type) {
-		case cartSyncMsg, catalogTickMsg, storefrontMsg, paymentPollMsg, paymentActionMsg, couponCompleteMsg, preparedMsg, shippingCompleteMsg, productsLoadedMsg, variationsLoadedMsg, variationsErrorMsg, errMsg, catalogErrorMsg, spinner.TickMsg, checkoutSubmittedMsg, tea.BackgroundColorMsg, tea.ColorProfileMsg:
+		case analyticsTickMsg, cartSyncMsg, catalogTickMsg, storefrontMsg, paymentPollMsg, paymentActionMsg, couponCompleteMsg, preparedMsg, shippingCompleteMsg, productsLoadedMsg, variationsLoadedMsg, variationsErrorMsg, errMsg, catalogErrorMsg, spinner.TickMsg, checkoutSubmittedMsg, tea.BackgroundColorMsg, tea.ColorProfileMsg:
 		default:
 			updated, cmd := m.updateActiveComponent(msg)
 			return updated, tea.Batch(append(cmds, cmd)...)
@@ -542,6 +560,7 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 		m.showSearch = true
 		return m, m.searchInput.Focus()
 	case "searchDone":
+		m.trackSearch()
 		m.showSearch = false
 		m.searchInput.Blur()
 	case "searchClear":
@@ -551,6 +570,7 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 		return m, m.updateProductList()
 	case "filter":
 		m.inStockOnly = !m.inStockOnly
+		m.event("filter_changed", map[string]any{"in_stock_only": m.inStockOnly})
 		return m, m.updateProductList()
 	case "sync":
 		m.err = nil
@@ -577,6 +597,7 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 		m.changeDraftQuantity(delta)
 	case "add":
 		m.err = m.addToCart()
+		m.analyticsError("cart", m.err)
 		if m.err == nil {
 			m.viewState = ViewCart
 			m.notice = "Added to cart: " + m.selectedProduct.Name
@@ -592,16 +613,21 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 	case "increase", "decrease", "delete":
 		if item := m.localCart.GetSelectedItem(); item != nil {
 			if m.shopper != nil {
+				id := item.ProductID
+				if item.VariationID > 0 {
+					id = item.VariationID
+				}
 				if action == "delete" {
-					m.err = m.shopper.SetQuantity(item.ProductID, item.GrindSize, 0)
+					m.err = m.shopper.SetQuantity(id, item.GrindSize, 0, m.analytics.connection)
 				} else {
 					delta := 1
 					if action == "decrease" {
 						delta = -1
 					}
-					m.err = m.shopper.AdjustQuantity(item.ProductID, item.GrindSize, delta)
+					m.err = m.shopper.AdjustQuantity(id, item.GrindSize, delta, m.analytics.connection)
 				}
 				m.applyShopper(m.shopper.Snapshot())
+				m.analyticsError("cart", m.err)
 			} else {
 				if action == "delete" {
 					m.localCart.RemoveItem(m.localCart.SelectedIdx)
@@ -615,6 +641,13 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 			}
 		}
 	case "checkout":
+		if m.shopper != nil {
+			m.applyShopper(m.shopper.Snapshot())
+		}
+		if m.checkoutReason() != "" {
+			return m, nil
+		}
+		m.event("begin_checkout", map[string]any{"item_count": m.localCart.ItemCount()})
 		m.viewState = ViewAddress
 		return m, m.initAddressForm()
 	case "confirm":
@@ -663,6 +696,7 @@ func (m Model) performAction(action string, msg tea.KeyPressMsg) (tea.Model, tea
 		m.viewState = ViewOrderConfirmation
 		m.err = nil
 	case "copy":
+		m.event("payment_link_copy_requested", nil)
 		m.notice = "Copy requested"
 		return m, tea.SetClipboard(m.sessionState.Attempt.PaymentURL)
 	case "recheck":
@@ -695,7 +729,7 @@ func (m *Model) addToCart() error {
 		if item.VariationID > 0 {
 			id = item.VariationID
 		}
-		if err := m.shopper.Add(storefront.Intent{ID: id, Name: item.Name, Grind: item.GrindSize, Quantity: item.Quantity}); err != nil {
+		if err := m.shopper.Add(storefront.Intent{ID: id, ProductID: item.ProductID, VariationID: item.VariationID, Name: item.Name, Grind: item.GrindSize, Quantity: item.Quantity}, m.analytics.connection); err != nil {
 			return err
 		}
 		m.applyShopper(m.shopper.Snapshot())

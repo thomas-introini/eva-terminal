@@ -303,6 +303,3 @@ func TestVariationMethods(t *testing.T) {
 		t.Error("expected empty string for nonexistent attribute")
 	}
 }
-
-
-

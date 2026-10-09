@@ -95,7 +95,7 @@ func TestMockSSHShoppingWalkthrough(t *testing.T) {
 	factory := func(token string) *storeapi.Client {
 		return storeapi.NewClient(backend.URL, storeapi.WithSessionTokens(token, ""), storeapi.WithBridgeKey("test-bridge-key-with-at-least-32-characters"))
 	}
-	catalog, err := storefront.NewCatalog(factory(""), dir, backend.URL)
+	catalog, err := storefront.NewCatalog(factory(""), dir, backend.URL, 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

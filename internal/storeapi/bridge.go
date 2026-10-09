@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/thomas/eva-terminal-go/internal/analytics"
 )
 
 const GatewayID = "eva_terminal_stripe_checkout"
@@ -19,10 +21,11 @@ type Quote struct {
 }
 
 type BridgeCheckoutRequest struct {
-	AttemptID     string          `json:"attempt_id"`
-	CustomerRef   string          `json:"customer_ref"`
-	AcceptedQuote Quote           `json:"accepted_quote"`
-	Checkout      CheckoutRequest `json:"checkout"`
+	AttemptID     string             `json:"attempt_id"`
+	CustomerRef   string             `json:"customer_ref"`
+	AcceptedQuote Quote              `json:"accepted_quote"`
+	Checkout      CheckoutRequest    `json:"checkout"`
+	Analytics     *analytics.Context `json:"analytics,omitempty"`
 }
 
 type Attempt struct {

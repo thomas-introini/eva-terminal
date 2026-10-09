@@ -29,7 +29,7 @@ def request(path, body=None, token="", extra=None, expected=200):
     return json.loads(raw), response.headers
 
 
-def new_checkout(product, lose=False, expected_state="awaiting_payment"):
+def new_checkout(product, lose=False, expected_state="awaiting_payment", analytics="valid"):
     grinds = product.get("extensions", {}).get("eva_terminal", {}).get("grinds", [])
     cart, headers = request("wc/store/v1/cart")
     token = headers["Cart-Token"]
@@ -51,6 +51,11 @@ def new_checkout(product, lose=False, expected_state="awaiting_payment"):
     quote = cart["extensions"]["eva_terminal"]["quote"]
     payload = {"attempt_id": uuid.uuid4().hex, "customer_ref": hashlib.sha256(uuid.uuid4().bytes).hexdigest(),
                "accepted_quote": quote, "checkout": {"billing_address": address, "shipping_address": address}}
+    if analytics == "valid":
+        payload["analytics"] = {"connection_id": str(uuid.uuid4()), "checkout_id": str(uuid.uuid4()),
+                                "schema_version": 1, "environment": "staging", "collect": True}
+    elif analytics == "malformed":
+        payload["analytics"] = {"connection_id": "invalid", "base_url": "https://untrusted.example"}
     changed = json.loads(json.dumps(payload))
     changed["accepted_quote"]["total"] = str(int(quote["total"]) + 1)
     request("eva-terminal/v1/checkout", changed, token, expected=409)
@@ -114,4 +119,11 @@ request("eva-terminal/v1/attempts/" + vp["attempt_id"] + "/cancel", {"customer_r
 zero = next(p for p in products if p["name"] == "EVA Free Test Sample")
 zp, za = new_checkout(zero, expected_state="paid")
 assert za["total"] == "0" and not za["payment_url"], za
+new_checkout(zero, expected_state="paid", analytics="malformed")
+new_checkout(zero, expected_state="paid", analytics="legacy")
+# Payment winning cancellation must enqueue even without an SSH client or webhook.
+cp, ca = new_checkout(product)
+request("eva-test/v1/session/" + ca["payment_url"].split("/")[-1], {"state": "paid"})
+won, _ = request("eva-terminal/v1/attempts/" + cp["attempt_id"] + "/cancel", {"customer_ref": cp["customer_ref"]})
+assert won["payment_state"] == "paid", won
 print("Native variations, coupons, shipping selection and zero-total checkout passed")

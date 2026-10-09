@@ -185,6 +185,3 @@ func BenchmarkStripHTML(b *testing.B) {
 		StripHTML(input)
 	}
 }
-
-
-
